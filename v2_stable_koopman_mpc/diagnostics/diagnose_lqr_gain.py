@@ -1,40 +1,52 @@
+"""
+Diagnostic: inspect the cascaded LQR's gain magnitudes and the virtual
+commands / RPMs it produces for a realistic position error.
+
+NOTE: this script was originally written against an earlier FLAT 12-state
+LQR design (a single gain matrix `self.K`). That design was abandoned --
+it destabilized the platform regardless of weight tuning -- and replaced
+by the cascaded outer-position / inner-attitude design in lqr_baseline.py,
+which exposes `self.Ko` and `self.Ki` instead. This script has been
+updated to match; before the fix it raised AttributeError on `lqr.K`.
+
+CAVEAT: the cascaded LQR baseline itself is NOT working. It does not
+stabilize in closed loop (see run_lqr_closed_loop.py, which crashes
+within ~1-2 s in every configuration tried). This script is retained as
+a debugging artifact only; do not treat its output as evidence of a
+functioning baseline.
+"""
+
 import numpy as np
-from lqr_baseline import LQRController, virtual_to_rpm
+from lqr_baseline import LQRController, virtual_to_rpm, RPM_HOVER, MAX_TILT_RAD, G
 
 lqr = LQRController()
 
-print("LQR gain matrix K shape:", lqr.K.shape)
-print("K row norms (one per virtual input: f, taux, tauy, tauz):")
-print(np.round(np.linalg.norm(lqr.K, axis=1), 6))
+print("Cascaded LQR gains:")
+print(f"  Outer (position -> desired accel) Ko shape: {lqr.Ko.shape}")
+print(f"    row norms [ax, ay, az]: {np.round(np.linalg.norm(lqr.Ko, axis=1), 6)}")
+print(f"  Inner (attitude -> torques)       Ki shape: {lqr.Ki.shape}")
+print(f"    row norms [taux, tauy, tauz]: {np.round(np.linalg.norm(lqr.Ki, axis=1), 6)}")
 
-# realistic scenario: already hovering at z=1.0, target 0.3m away in x
+# realistic scenario: already hovering at z=1.0, target 0.3 m away in x
 state12 = np.zeros(12)
-state12[2] = 1.0  # already at hover altitude
+state12[2] = 1.0
 target_pos = np.array([0.3, 0.0, 1.0])
-target = np.zeros(12)
-target[0:3] = target_pos
-error = state12 - target
 
-virtual_cmd = -lqr.K @ error
-print(f"\nFor a 0.3m x-position error (state at origin, target at x=0.3):")
-print(f"  virtual command [f, taux, tauy, tauz] = {virtual_cmd}")
-print(f"  (compare to the ~5e-6 Nm torque scale that worked cleanly in the sign-check)")
+# --- outer loop in isolation: what tilt does a 0.3 m error demand? ---
+outer_state = np.hstack([state12[0:3], state12[3:6]])
+outer_target = np.hstack([target_pos, [0, 0, 0]])
+acc_cmd = -lqr.Ko @ (outer_state - outer_target)
+theta_des_unclamped = np.arctan(acc_cmd[0] / G)
+theta_des = np.arctan(np.clip(acc_cmd[0] / G, -np.tan(MAX_TILT_RAD), np.tan(MAX_TILT_RAD)))
 
-rpm = virtual_to_rpm(*virtual_cmd)
-print(f"  resulting RPM: {np.round(rpm, 1)}")
+print(f"\nFor a 0.3 m x-position error (hovering at z=1.0, target x=0.3):")
+print(f"  outer-loop accel command [ax, ay, az] = {np.round(acc_cmd, 6)}")
+print(f"  implied pitch target: {np.degrees(theta_des_unclamped):.2f} deg "
+      f"(unclamped) -> {np.degrees(theta_des):.2f} deg (after clamp)")
 
-# --- check implied tilt angle for a larger, more realistic error ---
-target_pos2 = np.array([0.4, 0.4, 1.0])
-target2 = np.zeros(12)
-target2[0:3] = target_pos2
-error2 = state12 - target2
-virtual_cmd2 = -lqr.K @ error2
-tauy2 = virtual_cmd2[2]
-# rough estimate: at equilibrium tilt, tauy needed to HOLD an angle theta
-# scales with how far state is from target; here we just check the immediate
-# commanded torque isn't wildly larger than what produced a reasonable
-# (already-validated) ~15 degree tilt in our sign-check test
-print(f"\nFor a larger (0.4, 0.4)m position error:")
-print(f"  virtual command = {np.round(virtual_cmd2, 8)}")
-print(f"  (our validated sign-check used tauy=5e-6 for a 15-degree tilt;")
-print(f"   compare this tauy to that scale to gauge how aggressive this is)")
+# --- full cascade: what RPM does the whole controller actually command? ---
+rpm = lqr.compute(state12, target_pos)
+print(f"  final commanded RPM: {np.round(rpm, 1)}")
+print(f"  deviation from hover: {np.round(rpm - RPM_HOVER, 1)}")
+print(f"  (for scale: diagnose_lqr_sign.py used a ~450 rpm deviation to")
+print(f"   produce a clean, isolated ~15 deg tilt)")
