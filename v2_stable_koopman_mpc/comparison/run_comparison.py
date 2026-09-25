@@ -15,6 +15,7 @@ from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 
 from build_edmd_dataset import lift
 from koopman_mpc import KoopmanMPC
+from lqr_baseline import LQRController
 
 SIM_FREQ = 240
 CTRL_FREQ = 48
@@ -68,6 +69,8 @@ def run_episode(controller_type, condition_name):
 
     if controller_type == "pid":
         ctrl = DSLPIDControl(drone_model=DRONE_MODEL)
+    elif controller_type == "lqr":
+        ctrl = LQRController()
     elif controller_type in ("koopman_mpc", "koopman_mpc_adaptive"):
         model = np.load("data/koopman_model.npz")
         A, B = model["A"], model["B"]
@@ -125,6 +128,16 @@ def run_episode(controller_type, condition_name):
                 control_timestep=AGGR_PHY_STEPS / SIM_FREQ,
                 state=state, target_pos=target_pos, target_rpy=np.zeros(3),
             )
+        elif controller_type == "lqr":
+            vel = state[10:13]
+            quat = state[3:7]
+            rotmat_mat = np.array(p.getMatrixFromQuaternion(quat)).reshape(3, 3)
+            roll = np.arctan2(rotmat_mat[2, 1], rotmat_mat[2, 2])
+            pitch = -np.arcsin(np.clip(rotmat_mat[2, 0], -1, 1))
+            yaw = np.arctan2(rotmat_mat[1, 0], rotmat_mat[0, 0])
+            ang_vel = state[13:16]
+            state12 = np.hstack([pos, vel, [roll, pitch, yaw], ang_vel])
+            rpm_cmd = ctrl.compute(state12, target_pos)
         else:  # koopman_mpc or koopman_mpc_adaptive
             vel = state[10:13]
             quat = state[3:7]
@@ -196,7 +209,7 @@ def compute_metrics(log):
 
 if __name__ == "__main__":
     results = {}
-    for controller in ["pid", "koopman_mpc"]:
+    for controller in ["pid", "lqr"]:
         for condition in DISTURBANCE_CONDITIONS:
             print(f"Running {controller} / {condition} ...")
             log = run_episode(controller, condition)
@@ -218,7 +231,7 @@ if __name__ == "__main__":
     print("tracking tightness, since PID and Koopman-MPC may simply be tuned to")
     print("different absolute aggressiveness.\n")
     print(f"{'controller':<14} {'clean RMSE':>12} {'worst RMSE':>12} {'degradation':>14}")
-    for controller in ["pid", "koopman_mpc"]:
+    for controller in ["pid", "lqr"]:
         clean_rmse = results[(controller, "none")]["rmse"]
         worst_rmse = results[(controller, "payload+wind")]["rmse"]
         degradation_pct = 100 * (worst_rmse - clean_rmse) / clean_rmse
