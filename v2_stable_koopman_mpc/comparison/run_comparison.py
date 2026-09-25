@@ -209,7 +209,7 @@ def compute_metrics(log):
 
 if __name__ == "__main__":
     results = {}
-    for controller in ["pid", "lqr"]:
+    for controller in ["pid", "lqr", "koopman_mpc"]:
         for condition in DISTURBANCE_CONDITIONS:
             print(f"Running {controller} / {condition} ...")
             log = run_episode(controller, condition)
@@ -231,7 +231,7 @@ if __name__ == "__main__":
     print("tracking tightness, since PID and Koopman-MPC may simply be tuned to")
     print("different absolute aggressiveness.\n")
     print(f"{'controller':<14} {'clean RMSE':>12} {'worst RMSE':>12} {'degradation':>14}")
-    for controller in ["pid", "lqr"]:
+    for controller in ["pid", "lqr", "koopman_mpc"]:
         clean_rmse = results[(controller, "none")]["rmse"]
         worst_rmse = results[(controller, "payload+wind")]["rmse"]
         degradation_pct = 100 * (worst_rmse - clean_rmse) / clean_rmse
