@@ -1,0 +1,25 @@
+scenario,scenario_label,metric,best_controller
+1,Nominal,RMSE Tracking Error (m),PID
+1,Nominal,Settling Time (s),PID
+1,Nominal,Control Effort (RMS RPM dev. from hover),LQR
+1,Nominal,Max Transient Deviation (m),PID
+2,"Windy, selector OFF",RMSE Tracking Error (m),LQR
+2,"Windy, selector OFF",Settling Time (s),PID
+2,"Windy, selector OFF",Control Effort (RMS RPM dev. from hover),LQR
+2,"Windy, selector OFF",Max Transient Deviation (m),LQR
+3,"Windy, selector ON",RMSE Tracking Error (m),LQR
+3,"Windy, selector ON",Settling Time (s),PID
+3,"Windy, selector ON",Control Effort (RMS RPM dev. from hover),LQR
+3,"Windy, selector ON",Max Transient Deviation (m),LQR
+4,Nominal->Windy transition,RMSE Tracking Error (m),LQR
+4,Nominal->Windy transition,Settling Time (s),PID
+4,Nominal->Windy transition,Control Effort (RMS RPM dev. from hover),LQR
+4,Nominal->Windy transition,Max Transient Deviation (m),LQR
+5,Payload mid-flight,RMSE Tracking Error (m),LQR
+5,Payload mid-flight,Settling Time (s),no valid data
+5,Payload mid-flight,Control Effort (RMS RPM dev. from hover),LQR
+5,Payload mid-flight,Max Transient Deviation (m),LQR
+6,Payload + wind combined,RMSE Tracking Error (m),LQR
+6,Payload + wind combined,Settling Time (s),PID
+6,Payload + wind combined,Control Effort (RMS RPM dev. from hover),LQR
+6,Payload + wind combined,Max Transient Deviation (m),LQR

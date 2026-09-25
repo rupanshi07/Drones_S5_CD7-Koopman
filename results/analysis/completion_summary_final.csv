@@ -1,0 +1,19 @@
+scenario,scenario_label,controller,completed,duration_completed_s,pct_scenario_completed,failure_reason,failed_before_disturbance_onset
+1,Nominal,MPC,False,0.5208333333333333,3.472222222222222,flip,True
+1,Nominal,PID,True,15.0,100.0,none,False
+1,Nominal,LQR,True,15.0,100.0,none,False
+2,"Windy, selector OFF",MPC,False,0.4375,2.9166666666666665,flip,True
+2,"Windy, selector OFF",PID,True,15.0,100.0,none,False
+2,"Windy, selector OFF",LQR,True,15.0,100.0,none,False
+3,"Windy, selector ON",MPC,False,0.4375,2.9166666666666665,flip,True
+3,"Windy, selector ON",PID,True,15.0,100.0,none,False
+3,"Windy, selector ON",LQR,True,15.0,100.0,none,False
+4,Nominal -> Windy,MPC,False,0.5208333333333333,3.472222222222222,flip,True
+4,Nominal -> Windy,PID,True,15.0,100.0,none,False
+4,Nominal -> Windy,LQR,True,15.0,100.0,none,False
+5,Payload mid-flight,MPC,False,0.5208333333333333,3.472222222222222,flip,True
+5,Payload mid-flight,PID,True,15.0,100.0,none,False
+5,Payload mid-flight,LQR,True,15.0,100.0,none,False
+6,Payload + wind,MPC,False,0.4375,2.9166666666666665,flip,True
+6,Payload + wind,PID,True,15.0,100.0,none,False
+6,Payload + wind,LQR,True,15.0,100.0,none,False

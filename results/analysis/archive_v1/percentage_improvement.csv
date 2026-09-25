@@ -1,0 +1,49 @@
+scenario,scenario_label,metric,comparison,mpc_value,pid_value,pct_improvement,lqr_value
+1,Nominal,RMSE Tracking Error (m),PID vs MPC,0.0799228333918576,0.0,100.0,
+1,Nominal,RMSE Tracking Error (m),LQR vs MPC,0.0799228333918576,,100.0,0.0
+1,Nominal,Settling Time (s),PID vs MPC,,0.0,,
+1,Nominal,Settling Time (s),LQR vs MPC,,,,0.0
+1,Nominal,Control Effort (RMS RPM dev. from hover),PID vs MPC,7805.937680422489,32.42918350069937,99.58455748907613,
+1,Nominal,Control Effort (RMS RPM dev. from hover),LQR vs MPC,7805.937680422489,,99.58455748907613,32.42918350069936
+1,Nominal,Max Transient Deviation (m),PID vs MPC,0.10578240725641967,0.0,100.0,
+1,Nominal,Max Transient Deviation (m),LQR vs MPC,0.10578240725641967,,100.0,0.0
+2,"Windy, selector OFF",RMSE Tracking Error (m),PID vs MPC,0.14142098024494038,0.0009795590881276084,99.30734528467346,
+2,"Windy, selector OFF",RMSE Tracking Error (m),LQR vs MPC,0.14142098024494038,,99.9427050696652,8.102705211013336e-05
+2,"Windy, selector OFF",Settling Time (s),PID vs MPC,,0.0,,
+2,"Windy, selector OFF",Settling Time (s),LQR vs MPC,,,,0.0
+2,"Windy, selector OFF",Control Effort (RMS RPM dev. from hover),PID vs MPC,6459.990798008494,952.9183568803886,85.24892083168048,
+2,"Windy, selector OFF",Control Effort (RMS RPM dev. from hover),LQR vs MPC,6459.990798008494,,99.57616491006507,27.379707808527133
+2,"Windy, selector OFF",Max Transient Deviation (m),PID vs MPC,0.314777935744595,0.001338629826330054,99.57473835541758,
+2,"Windy, selector OFF",Max Transient Deviation (m),LQR vs MPC,0.314777935744595,,99.97266613137101,8.604098742945321e-05
+3,"Windy, selector ON",RMSE Tracking Error (m),PID vs MPC,0.11840699950959972,0.0009795590881276084,99.17271859587305,
+3,"Windy, selector ON",RMSE Tracking Error (m),LQR vs MPC,0.11840699950959972,,99.93156903523803,8.102705211013336e-05
+3,"Windy, selector ON",Settling Time (s),PID vs MPC,,0.0,,
+3,"Windy, selector ON",Settling Time (s),LQR vs MPC,,,,0.0
+3,"Windy, selector ON",Control Effort (RMS RPM dev. from hover),PID vs MPC,7551.118255585278,952.9183568803886,87.38043393539029,
+3,"Windy, selector ON",Control Effort (RMS RPM dev. from hover),LQR vs MPC,7551.118255585278,,99.63740856808492,27.379707808527133
+3,"Windy, selector ON",Max Transient Deviation (m),PID vs MPC,0.30194757836429914,0.001338629826330054,99.55666813637598,
+3,"Windy, selector ON",Max Transient Deviation (m),LQR vs MPC,0.30194757836429914,,99.97150466054553,8.604098742945321e-05
+4,Nominal->Windy transition,RMSE Tracking Error (m),PID vs MPC,0.07992273572316778,0.0007188895946689438,99.10051928507679,
+4,Nominal->Windy transition,RMSE Tracking Error (m),LQR vs MPC,0.07992273572316778,,99.92964778827283,5.622741225411039e-05
+4,Nominal->Windy transition,Settling Time (s),PID vs MPC,,0.0,,
+4,Nominal->Windy transition,Settling Time (s),LQR vs MPC,,,,0.0
+4,Nominal->Windy transition,Control Effort (RMS RPM dev. from hover),PID vs MPC,7779.832247263326,606.3732372773702,92.20583146261706,
+4,Nominal->Windy transition,Control Effort (RMS RPM dev. from hover),LQR vs MPC,7779.832247263326,,99.61345751176593,30.07235714900867
+4,Nominal->Windy transition,Max Transient Deviation (m),PID vs MPC,0.09907723459391808,0.001426013175440416,98.56070551294135,
+4,Nominal->Windy transition,Max Transient Deviation (m),LQR vs MPC,0.09907723459391808,,99.91315766151315,8.604098742945321e-05
+5,Payload mid-flight,RMSE Tracking Error (m),PID vs MPC,0.07992127675340163,0.05001059254280305,37.42518316228664,
+5,Payload mid-flight,RMSE Tracking Error (m),LQR vs MPC,0.07992127675340163,,76.40963080158537,0.01885372425421417
+5,Payload mid-flight,Settling Time (s),PID vs MPC,,,,
+5,Payload mid-flight,Settling Time (s),LQR vs MPC,,,,
+5,Payload mid-flight,Control Effort (RMS RPM dev. from hover),PID vs MPC,7801.103440875555,1772.5843368732162,77.27777422376711,
+5,Payload mid-flight,Control Effort (RMS RPM dev. from hover),LQR vs MPC,7801.103440875555,,77.29405317617058,1771.3143989571308
+5,Payload mid-flight,Max Transient Deviation (m),PID vs MPC,0.09911119536287163,0.07522942981732361,24.095931300304393,
+5,Payload mid-flight,Max Transient Deviation (m),LQR vs MPC,0.09911119536287163,,72.46148639404564,0.027293750020028415
+6,Payload + wind combined,RMSE Tracking Error (m),PID vs MPC,0.11795097282695727,0.0498874495255389,57.70492745428438,
+6,Payload + wind combined,RMSE Tracking Error (m),LQR vs MPC,0.11795097282695727,,84.04788532406145,0.018815674446741332
+6,Payload + wind combined,Settling Time (s),PID vs MPC,,0.0,,
+6,Payload + wind combined,Settling Time (s),LQR vs MPC,,,,0.0
+6,Payload + wind combined,Control Effort (RMS RPM dev. from hover),PID vs MPC,6961.331260406497,1874.1266037936482,73.07804306838558,
+6,Payload + wind combined,Control Effort (RMS RPM dev. from hover),LQR vs MPC,6961.331260406497,,74.5878870036681,1769.0213659434744
+6,Payload + wind combined,Max Transient Deviation (m),PID vs MPC,0.30194757836429914,0.07527058993666524,75.07163649252672,
+6,Payload + wind combined,Max Transient Deviation (m),LQR vs MPC,0.30194757836429914,,90.9786948160614,0.02723961253975557

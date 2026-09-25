@@ -1,0 +1,25 @@
+scenario,scenario_label,metric,best_controller
+1,Nominal,RMSE,LQR
+1,Nominal,Settling Time,LQR
+1,Nominal,Control Effort RMS,PID
+1,Nominal,Maximum Transient Deviation,LQR
+2,"Windy, selector OFF",RMSE,LQR
+2,"Windy, selector OFF",Settling Time,LQR
+2,"Windy, selector OFF",Control Effort RMS,LQR
+2,"Windy, selector OFF",Maximum Transient Deviation,LQR
+3,"Windy, selector ON",RMSE,LQR
+3,"Windy, selector ON",Settling Time,LQR
+3,"Windy, selector ON",Control Effort RMS,LQR
+3,"Windy, selector ON",Maximum Transient Deviation,LQR
+4,Nominal -> Windy,RMSE,LQR
+4,Nominal -> Windy,Settling Time,PID
+4,Nominal -> Windy,Control Effort RMS,LQR
+4,Nominal -> Windy,Maximum Transient Deviation,LQR
+5,Payload mid-flight,RMSE,LQR
+5,Payload mid-flight,Settling Time,No successful controller
+5,Payload mid-flight,Control Effort RMS,LQR
+5,Payload mid-flight,Maximum Transient Deviation,LQR
+6,Payload + wind,RMSE,LQR
+6,Payload + wind,Settling Time,No successful controller
+6,Payload + wind,Control Effort RMS,LQR
+6,Payload + wind,Maximum Transient Deviation,LQR
