@@ -6,3 +6,7 @@ data/*.npz
 results/*.csv
 notebooks/
 results/plots/
+
+drones-env/
+gym-pybullet-drones/
+repo_update_package/
