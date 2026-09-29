@@ -35,9 +35,10 @@
 | `v2_stable_koopman_mpc/data_collection/` | Phase 2 flight data collection with independent excitation and disturbance injection |
 | `v2_stable_koopman_mpc/koopman_model/`   | Phase 2 EDMD dataset construction and Koopman model fitting                          |
 | `v2_stable_koopman_mpc/mpc/`             | Phase 2 Koopman-MPC controller (QP formulation) and closed-loop test runner          |
-| `v2_stable_koopman_mpc/baselines/`       | Phase 2 cascaded LQR baseline                                                        |
-| `v2_stable_koopman_mpc/comparison/`      | Phase 2 PID vs. Koopman-MPC disturbance comparison harness                           |
+| `v2_stable_koopman_mpc/baselines/`       | Phase 2 cascaded LQR baseline (fixed and stable — see §6.6)                          |
+| `v2_stable_koopman_mpc/comparison/`      | Phase 2 PID vs. LQR vs. Koopman-MPC disturbance comparison harness                   |
 | `v2_stable_koopman_mpc/diagnostics/`     | Phase 2 sign-consistency checks, horizon validation, crashed-episode filtering       |
+| `v2_stable_koopman_mpc/mpc/kalman_mpc.py` | Phase 2 Kalman-filtered state estimation test for Koopman-MPC under sensor noise    |
 | `Matlab.mlx`                  | Supplementary Phase 1 MATLAB notebook                                                      |
 | `README.md`                   | This file — full two-phase project report                                                 |
 
@@ -85,8 +86,17 @@ still does not outperform PID on tracking accuracy or disturbance degradation
 payload and wind). This is reported honestly, with control-effort evidence showing
 the controller is not failing to detect disturbance but failing to react to it with
 sufficient authority — a conservatism required for stability given the model's
-validity region, not a bug. Concrete next steps to close this remaining gap are
-identified.
+validity region, not a bug. A previously-incomplete Phase 2 LQR baseline was
+subsequently diagnosed and fixed: the failure traced not to the LQR gains themselves
+but to an incorrect thrust/torque-to-RPM mixer and a units mismatch between the
+controller's physical torque output and the mixer's expected input scale. With both
+corrected, the Phase 2 LQR baseline is stable across the full disturbance matrix
+(RMSE 0.28 m clean, 180.6% relative degradation under combined payload and wind) —
+completing the three-way PID/LQR/Koopman-MPC comparison this project set out to
+produce. A supplementary test of Kalman-filtered state estimation for Koopman-MPC
+under sensor noise found no measurable benefit over the raw noisy measurement,
+a negative result reported alongside the rest. Concrete next steps to close the
+remaining PID gap are identified.
 
 ---
 
@@ -591,78 +601,110 @@ $Q_m$ position weight 120, $E_m$ rate weight 1.0, $R_m$ effort weight $10^{-3}$.
 
 ### 6.6 Baseline: cascaded LQR
 
-**This baseline is incomplete and is reported as a negative result.** An LQR
-baseline independent of Phase 1's (§2.6) was attempted for Phase 2 and never
-reached a stable closed loop; the Phase 2 comparison in §7 is therefore
-**PID vs. Koopman-MPC only**, with no Phase 2 LQR column.
+**This baseline was initially incomplete and has since been fixed.** An LQR
+baseline independent of Phase 1's (§2.6) was attempted for Phase 2: a cascaded
+design with an outer position-tracking LQR producing a desired tilt angle
+(clamped to ±20°) and a separate, faster inner attitude-tracking LQR, mirroring
+the two-timescale structure that makes PID work on this platform. Initial attempts
+— across several $Q$/$R$ weightings spanning multiple orders of magnitude in
+control cost — all lost altitude and reached the ground within roughly 0.5–2
+seconds, with motors visibly saturating between 0 RPM and maximum RPM.
 
-Six substantively different configurations were tried, all of which lost altitude
-and reached the ground within roughly 0.5–2 seconds:
+**Root cause.** The failure was not the LQR gains themselves, nor the cascade
+structure, nor the tilt clamp — all three were independently verified correct
+before the actual cause was found. The controller's commanded thrust and torque
+were being converted to per-motor RPM through a **force-squared physical mixer**
+(inverting $f = \sum k_f\omega_i^2$-style relations directly), which turned out to
+be roughly three orders of magnitude too sensitive: a thrust deviation of only
+0.01 N — under 4% of hover thrust — was sufficient to drive the mixer's output
+from zero RPM to maximum RPM. Any small, physically reasonable correction the LQR
+computed was therefore violently amplified into full motor saturation, producing
+exactly the 0-RPM/max-RPM oscillation observed. A second, compounding issue was a
+**units mismatch**: once the mixer was replaced with the same PWM-linear mixer
+`gym-pybullet-drones`' own `DSLPIDControl` uses internally (which is why the PID
+baseline never exhibited this problem), the LQR's torque output — computed in
+physically correct Newton-metres — was several orders of magnitude too small
+relative to the PWM-additive units that mixer expects, so the controller could
+correct altitude but could no longer command any differential torque at all,
+leaving roll and pitch entirely unactuated. Rescaling the torque output through
+the vehicle's moment-of-inertia matrix and clipping it to the same range
+`DSLPIDControl` uses resolved this.
 
-1. Flat 12-state LQR (position + attitude in a single gain matrix), at three
-   different $Q$/$R$ weightings spanning four orders of magnitude in control cost.
-2. A **cascaded** redesign — outer position-tracking LQR producing a desired tilt
-   angle, **explicitly clamped to ±20°**, tracked by a separate faster inner
-   attitude LQR — mirroring the two-timescale structure that makes PID work on this
-   platform.
-3. The cascaded design with a substantially softened inner loop, to reduce
-   overshoot past the clamped tilt target.
+**Result.** With both fixes in place, the cascaded LQR baseline is stable across
+the full disturbance matrix, with no saturation and no crash in any condition —
+see §7.1 for the completed three-way comparison this enables. It does not, however,
+match either PID or Koopman-MPC on tracking accuracy or disturbance degradation
+(§7.1), and its error does not settle back under this project's 0.15 m recovery
+threshold within the flight in any condition tested — a real limitation, not
+merely a slower recovery, discussed further in §7.1.
 
-The cascade and the tilt clamp did *not* rescue it, so the failure is not simply
-"missing a cascade". Two things were verified and are not the cause: the
-virtual-command-to-RPM mixer is directionally correct (`diagnose_lqr_sign.py`
-confirms thrust-up climbs with zero roll/pitch coupling, $+\tau_x$ produces pure
-roll, $+\tau_y$ produces pure pitch), and the gain magnitudes were brought into a
-sane range (`diagnose_lqr_gain.py`). The most likely remaining cause, not
-investigated further, is that the inner loop overshoots the clamped tilt reference
-during the fast initial transient — a rate-limited (ramped) attitude reference and
-anti-windup would be the next things to try.
-
-One finding does survive from this attempt, and is worth carrying back to Phase 1's
-future-work discussion: **direct full-state LQR is not a drop-in baseline for a
-low-inertia quadrotor**. Phase 1's LQR (§2.6) succeeded because it controls only
-the decoupled *height* channel about hover, where the linearization is valid;
-extending LQR to full position-and-attitude control on this platform proved
-substantially harder than that result suggests.
+The finding that does survive from the earlier failed attempts is still worth
+carrying back to Phase 1's future-work discussion: **the mixer and unit
+conventions a controller's torque output is expressed in matter as much as the
+gain design itself.** A well-tuned LQR with a mismatched or overly sensitive
+actuator mapping is indistinguishable, from the outside, from a badly-tuned one —
+both saturate and crash — and this is easy to misdiagnose as a control-law problem
+when it is, in fact, purely an actuation-interface problem.
 
 ## 7. Phase 2 Results
 
 ### 7.1 Final comparison metrics
 
 Same reference trajectory and disturbance schedule (payload at t=3s, wind gust
-t=3–5s) applied identically to both controllers:
+t=3–5s) applied identically to all three controllers:
 
-| Controller  | Condition       | RMSE (m) | Max err (m) | Control effort |
-| ----------- | --------------- | -------- | ----------- | --------------- |
-| PID         | none            | 0.0381   | 0.0583      | 58.7            |
-| PID         | payload         | 0.0529   | 0.0680      | 1,836,034       |
-| PID         | wind            | 0.0375   | 0.0583      | 96.7            |
-| PID         | payload+wind    | 0.0525   | 0.0680      | 1,835,657       |
-| Koopman-MPC | none            | 0.3394   | 0.4560      | 0.0006          |
-| Koopman-MPC | payload         | 0.8117   | 1.1027      | 0.0009          |
-| Koopman-MPC | wind            | 0.4071   | 0.8211      | 0.0006          |
-| Koopman-MPC | payload+wind    | 0.8003   | 1.0865      | 0.0008          |
+| Controller  | Condition       | RMSE (m) | Max err (m) | Recovery (s) | Control effort |
+| ----------- | --------------- | -------- | ----------- | ------------- | --------------- |
+| PID         | none            | 0.0381   | 0.0583      | 0.00          | 58.7            |
+| PID         | payload         | 0.0529   | 0.0680      | 0.00          | 1,836,034       |
+| PID         | wind            | 0.0375   | 0.0583      | 0.00          | 96.7            |
+| PID         | payload+wind    | 0.0525   | 0.0680      | 0.00          | 1,835,657       |
+| LQR         | none            | 0.2773   | 0.3946      | N/A           | 4.97            |
+| LQR         | payload         | 0.7917   | 1.0855      | N/A           | 64,816.8        |
+| LQR         | wind            | 0.3496   | 0.5904      | N/A           | 4.96            |
+| LQR         | payload+wind    | 0.7781   | 1.0662      | N/A           | 64,831.8        |
+| Koopman-MPC | none            | 0.3394   | 0.4560      | N/A           | 0.0006          |
+| Koopman-MPC | payload         | 0.8117   | 1.1027      | N/A           | 0.0009          |
+| Koopman-MPC | wind            | 0.4071   | 0.8211      | N/A           | 0.0006          |
+| Koopman-MPC | payload+wind    | 0.8003   | 1.0865      | N/A           | 0.0008          |
 
-**Relative degradation** (clean → payload+wind): PID **37.8%**, Koopman-MPC
-**135.8%**.
+**Relative degradation** (clean → payload+wind): PID **37.8%**, LQR **180.6%**,
+Koopman-MPC **135.8%**.
 
-**Attitude stability — the Phase 1 failure mode — is fully resolved.** Across every
-condition above, Koopman-MPC holds roll and pitch within ≈1°, versus Phase 1's
-tip-past-90°-in-0.5 s. The RMSE figures above are computed over the full 8-second
-flight in all four conditions, with no crash-truncation needed (contrast Phase 1's
-§3.1, where every MPC row is truncated at t≈0.42–0.50 s).
+**Attitude stability — the Phase 1 failure mode — is fully resolved for
+Koopman-MPC.** Across every condition above, Koopman-MPC holds roll and pitch
+within ≈1°, versus Phase 1's tip-past-90°-in-0.5 s. The RMSE figures above are
+computed over the full 8-second flight in all four conditions for both
+Koopman-MPC and the fixed LQR baseline, with no crash-truncation needed (contrast
+Phase 1's §3.1, where every MPC row is truncated at t≈0.42–0.50 s).
 
-**Altitude authority under payload is not resolved.** The two payload rows above
-are dominated by a loss of altitude: the controller holds the drone level but sinks
-from 1.0 m to ≈0.01 m and remains on the ground for the rest of the flight. By the
-0.05 m minimum-altitude criterion this project uses to screen training episodes
-(`diagnostics/scan_bad_episodes.py`), those two runs would be classified as
-failures. Reducing the payload from 25% to 15% of nominal mass does *not*
-meaningfully change this — the drone still descends to ≈0.01 m — so it is a
+**Altitude authority under payload is not resolved for Koopman-MPC.** The two
+payload rows above are dominated by a loss of altitude: the controller holds the
+drone level but sinks from 1.0 m to ≈0.01 m and remains on the ground for the rest
+of the flight. By the 0.05 m minimum-altitude criterion this project uses to screen
+training episodes (`diagnostics/scan_bad_episodes.py`), those two runs would be
+classified as failures. Reducing the payload from 25% to 15% of nominal mass does
+*not* meaningfully change this — the drone still descends to ≈0.01 m — so it is a
 control-authority limit (§7.3), not a threshold effect of one particular
 disturbance magnitude.
 
-Koopman-MPC does not beat PID on any tracking metric in any condition.
+**LQR is stable but the weakest tracker of the three, and its recovery time is
+undefined in every condition.** Unlike Koopman-MPC, LQR does not lose altitude —
+its degradation instead comes from consistently looser position tracking across
+the whole flight, including the clean case, and a payload-condition RMSE (0.79 m)
+that is worse even than Koopman-MPC's own altitude-collapse-dominated payload
+result. The `recovery(s) = N/A` entries mean LQR's tracking error never drops back
+under this project's 0.15 m recovery threshold at any point after the disturbance
+window ends, in any of the four conditions — including the undisturbed case, where
+there is no disturbance to recover from in the first place, so this reflects a
+persistent steady-state tracking offset rather than a disturbance-response
+failure specifically. This is consistent with the cascaded design's outer loop
+being tuned conservatively (§6.6) to guarantee stability after the actuation-mixer
+fix, at the cost of tracking tightness — the same authority-vs-stability tradeoff
+§7.3 identifies for Koopman-MPC, arrived at independently for a different
+controller.
+
+Neither LQR nor Koopman-MPC beats PID on any tracking metric in any condition.
 
 ### 7.2 Short-horizon prediction validation
 
@@ -738,6 +780,50 @@ that the model's remaining limitation is at least partly addressable by training
 coverage, not purely an architectural ceiling, though it did not close the full gap
 to PID.
 
+### 7.5 Supplementary test: Kalman-filtered state estimation
+
+A separate test (`v2_stable_koopman_mpc/mpc/kalman_mpc.py`) asks a different
+question from §7.1–§7.4: given that Koopman-MPC already tracks less tightly than
+PID, is any of that gap attributable to noisy state measurement rather than
+control-law or model limitations? Three variants of the same Koopman-MPC
+controller were run against identical trajectories and disturbance schedules,
+differing only in what state estimate is fed to the QP: **perfect** (noise-free
+ground truth, a theoretical upper bound), **noisy** (raw measurements with
+GPS-degraded position noise, $\sigma=0.08$ m, and IMU-derived velocity/rotation
+noise), and **kalman** (the same noisy measurements passed through a Kalman filter
+operating on the full 27-dimensional lifted state, not just position).
+
+| Mode    | Condition          | RMSE (m) | Max err (m) |
+| ------- | ------------------ | -------- | ----------- |
+| Perfect | none                | 0.3394   | 0.4560      |
+| Noisy   | none                | 0.3397   | 0.4545      |
+| Kalman  | none                | 0.3403   | 0.4546      |
+| Perfect | payload+wind        | 0.8003   | 1.0865      |
+| Noisy   | payload+wind        | 0.8002   | 1.0863      |
+| Kalman  | payload+wind        | 0.8002   | 1.0863      |
+
+**The Kalman filter provides no measurable benefit, and reported here as a
+negative result.** In the clean condition the filtered variant is marginally
+*worse* than the unfiltered noisy measurement (0.3403 m vs. 0.3397 m) — the
+filter closes a negative fraction of the gap to the perfect-state upper bound,
+meaning it very slightly hurts rather than helps. Under combined payload and wind
+disturbance, all three variants are statistically indistinguishable to four
+decimal places (0.8002–0.8003 m), meaning the choice of state estimator has
+essentially zero effect on tracking performance in either regime tested.
+
+The most likely explanation is that the MPC's own receding-horizon structure
+already implicitly filters noise: each solve re-plans from the current measurement
+but discounts its predictions against the fitted (and comparatively low-noise)
+Koopman model over a multi-step horizon, so the marginal information a separate
+Kalman filter adds on top is small relative to the noise levels tested here, while
+any filter lag or model mismatch in the filter's own process model can slightly
+offset that small gain. This suggests that, for this specific controller and this
+noise regime, **state estimation is not the binding constraint on tracking
+performance** — the gap to PID documented in §7.3 is a control-authority and
+model-validity-region issue, not a sensing-fidelity issue, and effort spent
+improving the Koopman-MPC further would be better directed at §8's items than at
+a more sophisticated estimator.
+
 ## 8. Future Work
 
 Following directly from §7.3's evidence:
@@ -760,6 +846,12 @@ Following directly from §7.3's evidence:
    since it gives up the convexity that makes the current QP fast and reliable to
    solve, but would remove the "valid only near the training distribution"
    constraint that §7.3 identifies as the binding limitation.
+5. **Retune the LQR baseline for tracking tightness, not just stability.** §6.6's
+   fix prioritized eliminating saturation and crashing; the resulting gains are
+   conservative enough that recovery time is undefined in every condition (§7.1).
+   With the actuation-mixer bug now fixed, there is room to retune the outer-loop
+   weighting more aggressively without reintroducing the earlier instability,
+   which was never actually caused by gain magnitude in the first place.
 
 ---
 
@@ -790,8 +882,21 @@ in any similar data-driven control pipeline. The now-stable Koopman-MPC still do
 not outperform PID, and this is reported honestly, with direct control-effort
 evidence explaining the mechanism: the controller is conservatively tuned to remain
 within its model's valid region, at the cost of tracking authority PID does not need
-to sacrifice. Concrete, evidence-grounded next steps are identified to close this
-remaining gap.
+to sacrifice.
+
+A previously-incomplete Phase 2 LQR baseline was also diagnosed and fixed,
+completing the three-way PID/LQR/Koopman-MPC comparison this project set out to
+produce: the failure traced not to gain tuning but to an actuation-mixer
+sensitivity bug and a units mismatch between the controller's physical torque
+output and the mixer's expected scale, both independent of the control law itself.
+With these fixed, LQR is stable across the full disturbance matrix but remains the
+weakest tracker of the three, with an undefined recovery time in every condition —
+a conservatism tradeoff arrived at independently, mirroring the one Koopman-MPC's
+own tuning faces. A supplementary Kalman-filter test found no measurable tracking
+benefit from filtered state estimation over raw noisy measurement, a negative
+result indicating that, for this controller, sensing fidelity is not the binding
+constraint. Concrete, evidence-grounded next steps are identified to close the
+remaining PID gap for both LQR and Koopman-MPC.
 
 ---
 
@@ -820,13 +925,16 @@ python v2_stable_koopman_mpc/koopman_model/fit_koopman.py
 python v2_stable_koopman_mpc/diagnostics/diagnose_sign.py          # verify sign-correctness first
 python v2_stable_koopman_mpc/diagnostics/validate_koopman_horizon.py
 python v2_stable_koopman_mpc/mpc/run_mpc_closed_loop.py
-python v2_stable_koopman_mpc/comparison/run_comparison.py          # final PID vs Koopman-MPC comparison
+python v2_stable_koopman_mpc/baselines/run_lqr_closed_loop.py
+python v2_stable_koopman_mpc/comparison/run_comparison.py          # final PID vs LQR vs Koopman-MPC comparison
+python v2_stable_koopman_mpc/mpc/kalman_mpc.py                     # supplementary Kalman-filter state-estimation test
 ```
 
-`baselines/run_lqr_closed_loop.py` and `diagnostics/diagnose_lqr_gain.py` are
-retained for completeness but are **not** part of the reported results: the Phase 2
-LQR baseline does not stabilize (§6.6), and `run_lqr_closed_loop.py` will crash
-within a couple of seconds of simulated flight.
+Note: scripts under `v2_stable_koopman_mpc/` import across sibling subfolders
+(e.g. `comparison/run_comparison.py` imports from `koopman_model/`, `mpc/`, and
+`baselines/`), so either run them with `v2_stable_koopman_mpc/` added to
+`PYTHONPATH`, or run each script from within its own subfolder with the relevant
+sibling folders added to `PYTHONPATH` for that session.
 
 For the live demonstrations (GUI window, paced to real time):
 
