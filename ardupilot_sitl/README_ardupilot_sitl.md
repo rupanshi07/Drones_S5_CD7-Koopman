@@ -1,8 +1,8 @@
+   <img width="509" height="115" alt="amrita_logo" src="https://github.com/user-attachments/assets/ddc16d63-4a54-47f6-b606-2eae07f12ee3" />
+
 # ArduPilot SITL Integration — Koopman Model Predictive Control
 
 This folder contains the **ArduPilot Software-in-the-Loop (SITL) integration** for testing a Koopman-based Model Predictive Controller (MPC) for a simulated multirotor. It is intended to connect the controller to an ArduPilot SITL vehicle through MAVLink, run controlled simulation scenarios, and record tracking performance.
-
-> **Status:** Treat this integration as experimental until the vehicle completes a clean tracking test and the logged reference/actual trajectories have been checked. Large RMSE values or unexpected motion indicate that the setup is not yet validated.
 
 ## Contents
 
@@ -13,9 +13,10 @@ This folder contains the **ArduPilot Software-in-the-Loop (SITL) integration** f
 - [Run the simulation](#run-the-simulation)
 - [Scenarios](#scenarios)
 - [Results and validation](#results-and-validation)
-- [Sample simulation video](#sample-simulation-video)
 - [Troubleshooting](#troubleshooting)
 - [Safety and limitations](#safety-and-limitations)
+- [Future work](#future-work)
+- [References](#references)
 
 ## Project overview
 
@@ -51,8 +52,6 @@ ArduPilot SITL / Mission Planner
        Telemetry and logs
 ```
 
-The exact processes, ports, command-line options, and supported scenarios depend on the scripts in this repository version. Check each script's `--help` output before running it.
-
 ## Repository structure
 
 The file names below describe the roles of commonly used files in this integration. Your local version may contain additional files or slightly different names.
@@ -63,10 +62,7 @@ The file names below describe the roles of commonly used files in this integrati
 | `setup_vehicle.py` | Vehicle connection and initial setup, if included |
 | `sitl_controller.py` | Runs the controller against the SITL vehicle, if included |
 | `koopman_model.npz` | Saved Koopman model arrays and associated scaling values, if included |
-| `logs/` or results files | Simulation logs and metrics, if generated |
-| `media/` | Optional screenshots, plots, and demo video |
-
-Do not assume a file is present merely because it appears in this table; verify the actual folder contents.
+| `results` | Simulation logs and metrics, if generated |
 
 ## Requirements
 
@@ -161,15 +157,18 @@ python sitl_controller.py --controller koopman --scenario clean --duration 15
 Replace the scenario and arguments with the supported values listed by your script.
 
 ## Results and validation
+<img width="1917" height="1133" alt="Screenshot 2026-10-17 032706" src="https://github.com/user-attachments/assets/b1c0e550-6816-4093-86cc-3a60df33fec4" />
+<img width="1917" height="1136" alt="Screenshot 2026-10-17 015808" src="https://github.com/user-attachments/assets/2127bd4a-8aeb-48ed-b4cb-c894b3ec2c23" />
+<img width="1916" height="1140" alt="Screenshot 2026-10-17 032734" src="https://github.com/user-attachments/assets/11121352-77ff-4f59-a775-2962d23ba17a" />
 
 Record each test with the controller settings, scenario, duration, and output metrics.
 
 | Scenario | Position RMSE (m) | Maximum error (m) | Mean thrust | Notes |
 |---|---:|---:|---:|---|
-| Clean | — | — | — | Run and validate first |
-| Payload | — | — | — | Run after baseline validation |
-| Wind | — | — | — | Run after baseline validation |
-| Combined | — | — | — | Run after individual tests |
+| Clean | 62.9789 m | 92.8462 m | 0.500 | Run and validate first |
+| Payload | 301.0049 m | 332.3632 m | 0.531 | Run after baseline validation |
+| Wind | 201.1515 m | 225.4062 m | 0.500 | Run after baseline validation |
+| Combined | 421.8613 m | 450.6540 m | 0.531 | Run after individual tests |
 
 ### What to check
 
@@ -181,33 +180,7 @@ Record each test with the controller settings, scenario, duration, and output me
 - **Vehicle state:** Check whether the vehicle armed, entered the intended mode, remained airborne, and avoided disarming unexpectedly.
 - **Model compatibility:** Ensure the controller loads the intended model file and applies its scaling exactly once.
 
-Do not report a controller as stable based only on successful script execution. Validate the telemetry and trajectory plots.
-
-## Sample simulation video
-
-Add a short screen recording of the Mission Planner / SITL simulation here.
-
 Suggested repository layout:
-
-```text
-ardupilot_sitl/
-├── README.md
-└── media/
-    ├── koopman_mpc_sitl_demo.mp4
-    └── video-thumbnail.png
-```
-
-After uploading the video to `media/koopman_mpc_sitl_demo.mp4`, update the links below. GitHub may not display MP4 files as an embedded player in every view, so the direct link is the most reliable option.
-
-**Simulation recording:** [Watch the Koopman-MPC SITL demo](media/koopman_mpc_sitl_demo.mp4)
-
-Optional thumbnail preview:
-
-```markdown
-[![Koopman-MPC SITL demo](media/video-thumbnail.png)](media/koopman_mpc_sitl_demo.mp4)
-```
-
-If you do not have a thumbnail, remove that preview snippet or add a screenshot named `video-thumbnail.png` inside `media/`.
 
 ## Troubleshooting
 
@@ -255,6 +228,25 @@ If you do not have a thumbnail, remove that preview snippet or add a screenshot 
 - Document model training, state lifting, input scaling, and coordinate-frame conventions.
 - Compare Koopman-MPC performance with a baseline controller under identical conditions.
 
-## Contributing
 
-If extending this project, document any changes to the model format, MAVLink ports, control frequency, solver, scenario definitions, or command-line arguments. Include reproducible settings and logs for new experiments.
+## References
+
+1. **ArduPilot Documentation — SITL Simulator**  
+   Official documentation for Software-in-the-Loop simulation of ArduPilot vehicles.  
+   https://ardupilot.org/dev/docs/sitl-simulator-software-in-the-loop.html
+
+2. **ArduPilot Documentation — Using SITL for Testing**  
+   Guidance on using SITL to test autopilot behaviour in a simulated environment.  
+   https://ardupilot.org/dev/docs/using-sitl-for-ardupilot-testing.html
+
+3. **ArduPilot — Official Source Code Repository**  
+   Source code for ArduPilot, including autopilot software and simulation-related components.  
+   https://github.com/ArduPilot/ardupilot
+
+4. **MAVLink Developer Guide**  
+   Protocol documentation for communication between the flight controller, companion computer, and ground control station.  
+   https://mavlink.io/en/
+
+5. **Mission Planner — Official Documentation**  
+   Documentation for Mission Planner, the ground control station used to monitor and interact with ArduPilot vehicles.  
+   https://ardupilot.org/planner/
