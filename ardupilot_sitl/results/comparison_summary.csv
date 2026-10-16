@@ -1,0 +1,13 @@
+controller,scenario,rmse_m,max_err_m,mean_thrust
+koopman,clean,1.0832,1.118,0.5
+koopman,wind,1.0832,1.118,0.5
+koopman,payload,1.0832,1.118,0.535
+koopman,combined,nan,nan,nan
+lqr,clean,nan,nan,nan
+lqr,wind,nan,nan,nan
+lqr,payload,nan,nan,nan
+lqr,combined,nan,nan,nan
+pid,clean,nan,nan,nan
+pid,wind,nan,nan,nan
+pid,payload,nan,nan,nan
+pid,combined,nan,nan,nan
