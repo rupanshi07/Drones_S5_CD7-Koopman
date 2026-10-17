@@ -57,7 +57,7 @@ This project implements an intelligent controller called **Koopman-MPC** that so
 
 ---
 
-## 📊 Performance Benchmarks (Verified Simulator Data)
+##  Performance Benchmarks (Verified Simulator Data)
 
 ### 1. Calm Flight (Matches the 4-panel graph below)
 *Flying an elliptical 3D path over rolling hills for 12 seconds in calm air:*
