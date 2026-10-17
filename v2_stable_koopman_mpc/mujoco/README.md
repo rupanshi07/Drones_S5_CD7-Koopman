@@ -64,15 +64,25 @@ The QP optimizes differential steering RPMs around this adaptive baseline, maint
 
 ## 📊 Benchmark: PID vs. LQR vs. Koopman-MPC
 
-![Controller Comparison](comparison.png)
-
-Under rolling terrain with $+25\%$ extra payload and $0.02\text{ N}$ crosswind:
+### 1. Nominal Flight Benchmark (Matching `comparison.png`)
+*Rolling terrain, 12s trajectory, calm conditions:*
 
 | Controller | Status | RMSE (m) | Max Error (m) | Min AGL (m) | Lookahead? | Physical Constraints? |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **PID** | OK | 0.091 | 0.180 | 1.336 | ❌ No | ❌ No |
-| **LQR** | OK | 0.231 | 0.500 | 1.076 | ❌ No | ❌ No |
-| **Koopman-MPC** | **OK** | **0.199** | **0.494** | **1.458** | **✅ Yes (0.21s)** | **✅ Yes ($0 \le \text{RPM} \le 21713$)** |
+| **PID** | OK | 0.034 | 0.124 | 1.487 | ❌ No | ❌ No |
+| **LQR** | OK | 0.092 | 0.282 | 1.439 | ❌ No | ❌ No |
+| **Koopman-MPC** | **OK** | **0.200** | **0.391** | **1.423** | **✅ Yes (0.21s)** | **✅ Yes ($0 \le \text{RPM} \le 21,713$)** |
+
+### 2. Disturbance Rejection Benchmark
+*Rolling terrain with $+25\%$ extra payload mass at $t=3\text{s}$ and $0.02\text{ N}$ crosswind at $t=3-5\text{s}$:*
+
+| Controller | Status | RMSE (m) | Max Error (m) | Min AGL (m) | Disturbance Handling |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **PID** | OK | 0.091 | 0.180 | 1.336 | Fast error feedback reacts to offset |
+| **LQR** | OK | 0.231 | 0.500 | 1.076 | Steady-state altitude sag under load |
+| **Koopman-MPC** | **OK** | **0.770** | **1.549** | **1.158** | **Adaptive hover trim prevents terrain contact** |
+
+![Controller Comparison](comparison.png)
 
 ---
 
