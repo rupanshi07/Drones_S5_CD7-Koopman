@@ -1,0 +1,165 @@
+<mujoco model="cf2x_terrain">
+  <compiler angle="radian"/>
+  <!-- physics_hz is overridden from Python (240 Hz, same as gym-pybullet-drones) -->
+  <option timestep="0.0041666667" gravity="0 0 -9.8" integrator="RK4"/>
+
+  <visual>
+    <headlight ambient="0.55 0.55 0.55" diffuse="0.65 0.65 0.65"/>
+    <global offwidth="1280" offheight="720"/>
+    <quality shadowsize="2048"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.55 0.72 0.92" rgb2="0.12 0.14 0.22" width="256" height="256"/>
+    <texture name="grid" type="2d" builtin="checker" rgb1="0.32 0.48 0.30" rgb2="0.26 0.40 0.25" width="300" height="300"/>
+    <material name="terrain_mat" texture="grid" texrepeat="1 1" reflectance="0"/>
+    <material name="carbon_mat" rgba="0.12 0.12 0.14 1" reflectance="0.2" specular="0.4"/>
+    <material name="pcb_mat" rgba="0.06 0.32 0.16 1" reflectance="0.3" specular="0.5"/>
+    <material name="bell_mat" rgba="0.65 0.68 0.72 1" reflectance="0.6" specular="0.8"/>
+    <material name="prop_mat" rgba="0.88 0.90 0.95 0.9" reflectance="0.4" specular="0.6"/>
+    <material name="prop_disc_mat" rgba="0.80 0.88 0.98 0.28" reflectance="0.1"/>
+    <!-- size = (half-extent x, half-extent y, max elevation z, base thickness).
+         Elevation limit is 2.5m so mountain and rugged presets never clip collision bounds. -->
+    <hfield name="terrain" nrow="128" ncol="128" size="6 6 2.5 0.1"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 8" dir="0 0 -1" diffuse="0.85 0.85 0.85" castshadow="true"/>
+    <geom name="terrain" type="hfield" hfield="terrain" material="terrain_mat" pos="0 0 0"/>
+
+    <!-- Crazyflie 2.x, X-configuration. Physics numbers = gym-pybullet-drones CF2X:
+         Mass = 0.027 kg, Arm length = 0.0397 m (x,y = +-0.028 m)
+         Motor index mapping identical to gym-pybullet-drones / Koopman base:
+           Motor 0: Front-Left  (+x, +y)  CCW (yaw gear -)
+           Motor 1: Rear-Left   (-x, +y)  CW  (yaw gear +)
+           Motor 2: Rear-Right  (-x, -y)  CCW (yaw gear -)
+           Motor 3: Front-Right (+x, -y)  CW  (yaw gear +)
+    -->
+    <body name="drone" pos="0 0 1">
+      <freejoint name="root"/>
+      <inertial pos="0 0 0" mass="0.027" diaginertia="1.4e-5 1.4e-5 2.17e-5"/>
+
+      <!-- Tracking cameras for realistic third-person and FPV views -->
+      <camera name="chase" mode="trackcom" pos="-0.50 0 0.22" xyaxes="0 -1 0 0.38 0 0.925"/>
+      <camera name="fpv" pos="0.032 0 0.008" xyaxes="0 -1 0 0 0 1"/>
+      <camera name="side" mode="trackcom" pos="0 -0.55 0.18" xyaxes="1 0 0 0 0.31 0.95"/>
+      <camera name="topdown" mode="trackcom" pos="0 0 0.70" xyaxes="1 0 0 0 1 0"/>
+
+      <!-- Collision geometries (active in physics) -->
+      <geom name="core_col" type="box" size="0.018 0.018 0.008" pos="0 0 0" rgba="0 0 0 0"/>
+      <geom name="p0" type="sphere" pos=" 0.028  0.028 0.005" size="0.012" rgba="0 0 0 0"/>
+      <geom name="p1" type="sphere" pos="-0.028  0.028 0.005" size="0.012" rgba="0 0 0 0"/>
+      <geom name="p2" type="sphere" pos="-0.028 -0.028 0.005" size="0.012" rgba="0 0 0 0"/>
+      <geom name="p3" type="sphere" pos=" 0.028 -0.028 0.005" size="0.012" rgba="0 0 0 0"/>
+
+      <!-- Landing pegs (ensure drone rests upright on terrain) -->
+      <geom name="peg0" type="capsule" fromto=" 0.028  0.028 0.002  0.028  0.028 -0.012" size="0.002" material="carbon_mat"/>
+      <geom name="peg1" type="capsule" fromto="-0.028  0.028 0.002 -0.028  0.028 -0.012" size="0.002" material="carbon_mat"/>
+      <geom name="peg2" type="capsule" fromto="-0.028 -0.028 0.002 -0.028 -0.028 -0.012" size="0.002" material="carbon_mat"/>
+      <geom name="peg3" type="capsule" fromto=" 0.028 -0.028 0.002  0.028 -0.028 -0.012" size="0.002" material="carbon_mat"/>
+
+      <!-- ================= Detailed Visual Geometries ================= -->
+      <!-- Center Chassis: upper & lower carbon plates -->
+      <geom name="plate_top" type="box" size="0.016 0.016 0.0008" pos="0 0 0.004" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="plate_bot" type="box" size="0.016 0.016 0.0008" pos="0 0 -0.004" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- Standoff spacers between plates -->
+      <geom name="post0" type="cylinder" size="0.001 0.004" pos=" 0.012  0.012 0" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="post1" type="cylinder" size="0.001 0.004" pos="-0.012  0.012 0" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="post2" type="cylinder" size="0.001 0.004" pos="-0.012 -0.012 0" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="post3" type="cylinder" size="0.001 0.004" pos=" 0.012 -0.012 0" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- Flight controller PCB & components -->
+      <geom name="pcb" type="box" size="0.015 0.015 0.0007" pos="0 0 0.0055" material="pcb_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="mcu" type="box" size="0.004 0.004 0.0008" pos="0 0 0.007" rgba="0.08 0.08 0.08 1" contype="0" conaffinity="0" mass="0"/>
+      <geom name="usb" type="box" size="0.0035 0.004 0.0015" pos="-0.016 0 0.0055" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="nose_arrow" type="box" size="0.005 0.003 0.0008" pos="0.018 0 0.004" rgba="1.0 0.45 0.0 1" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- LiPo Battery underneath -->
+      <geom name="battery" type="box" size="0.014 0.009 0.004" pos="0 0 -0.009" rgba="0.18 0.45 0.85 1" contype="0" conaffinity="0" mass="0"/>
+      <geom name="battery_strap" type="box" size="0.004 0.0095 0.0042" pos="0 0 -0.009" rgba="0.08 0.08 0.08 1" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- 4 Diagonal Carbon Fiber Arms -->
+      <geom name="arm_fl" type="capsule" fromto="0 0 0  0.028  0.028 0" size="0.0022" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="arm_rl" type="capsule" fromto="0 0 0 -0.028  0.028 0" size="0.0022" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="arm_rr" type="capsule" fromto="0 0 0 -0.028 -0.028 0" size="0.0022" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="arm_fr" type="capsule" fromto="0 0 0  0.028 -0.028 0" size="0.0022" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- Motor Mounts & Motor Assemblies -->
+      <!-- Motor 0: Front-Left (+x, +y) -->
+      <geom name="m0_base" type="cylinder" size="0.0048 0.004" pos=" 0.028  0.028 0.002" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="m0_bell" type="cylinder" size="0.0046 0.0035" pos=" 0.028  0.028 0.007" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="m0_disc" type="cylinder" size="0.024 0.0005" pos=" 0.028  0.028 0.0135" material="prop_disc_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="led_fl"  type="sphere"   size="0.0022" pos=" 0.028  0.028 -0.003" rgba="0.1 1.0 0.3 1" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- Motor 1: Rear-Left (-x, +y) -->
+      <geom name="m1_base" type="cylinder" size="0.0048 0.004" pos="-0.028  0.028 0.002" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="m1_bell" type="cylinder" size="0.0046 0.0035" pos="-0.028  0.028 0.007" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="m1_disc" type="cylinder" size="0.024 0.0005" pos="-0.028  0.028 0.0135" material="prop_disc_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="led_rl"  type="sphere"   size="0.0022" pos="-0.028  0.028 -0.003" rgba="1.0 0.15 0.15 1" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- Motor 2: Rear-Right (-x, -y) -->
+      <geom name="m2_base" type="cylinder" size="0.0048 0.004" pos="-0.028 -0.028 0.002" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="m2_bell" type="cylinder" size="0.0046 0.0035" pos="-0.028 -0.028 0.007" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="m2_disc" type="cylinder" size="0.024 0.0005" pos="-0.028 -0.028 0.0135" material="prop_disc_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="led_rr"  type="sphere"   size="0.0022" pos="-0.028 -0.028 -0.003" rgba="1.0 0.15 0.15 1" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- Motor 3: Front-Right (+x, -y) -->
+      <geom name="m3_base" type="cylinder" size="0.0048 0.004" pos=" 0.028 -0.028 0.002" material="carbon_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="m3_bell" type="cylinder" size="0.0046 0.0035" pos=" 0.028 -0.028 0.007" material="bell_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="m3_disc" type="cylinder" size="0.024 0.0005" pos=" 0.028 -0.028 0.0135" material="prop_disc_mat" contype="0" conaffinity="0" mass="0"/>
+      <geom name="led_fr"  type="sphere"   size="0.0022" pos=" 0.028 -0.028 -0.003" rgba="0.1 1.0 0.3 1" contype="0" conaffinity="0" mass="0"/>
+
+      <!-- Dynamic Propellers (turned kinematically during simulation) -->
+      <body name="prop0" pos=" 0.028  0.028 0.012">
+        <inertial pos="0 0 0" mass="1e-9" diaginertia="1e-13 1e-13 1e-13"/>
+        <joint name="pj0" type="hinge" axis="0 0 1"/>
+        <geom type="capsule" fromto="-0.023 0 0 0.023 0 0" size="0.0018" material="prop_mat" contype="0" conaffinity="0"/>
+        <geom type="capsule" fromto="0 -0.023 0 0 0.023 0" size="0.0018" material="prop_mat" contype="0" conaffinity="0"/>
+      </body>
+
+      <body name="prop1" pos="-0.028  0.028 0.012">
+        <inertial pos="0 0 0" mass="1e-9" diaginertia="1e-13 1e-13 1e-13"/>
+        <joint name="pj1" type="hinge" axis="0 0 1"/>
+        <geom type="capsule" fromto="-0.023 0 0 0.023 0 0" size="0.0018" material="prop_mat" contype="0" conaffinity="0"/>
+        <geom type="capsule" fromto="0 -0.023 0 0 0.023 0" size="0.0018" material="prop_mat" contype="0" conaffinity="0"/>
+      </body>
+
+      <body name="prop2" pos="-0.028 -0.028 0.012">
+        <inertial pos="0 0 0" mass="1e-9" diaginertia="1e-13 1e-13 1e-13"/>
+        <joint name="pj2" type="hinge" axis="0 0 1"/>
+        <geom type="capsule" fromto="-0.023 0 0 0.023 0 0" size="0.0018" material="prop_mat" contype="0" conaffinity="0"/>
+        <geom type="capsule" fromto="0 -0.023 0 0 0.023 0" size="0.0018" material="prop_mat" contype="0" conaffinity="0"/>
+      </body>
+
+      <body name="prop3" pos=" 0.028 -0.028 0.012">
+        <inertial pos="0 0 0" mass="1e-9" diaginertia="1e-13 1e-13 1e-13"/>
+        <joint name="pj3" type="hinge" axis="0 0 1"/>
+        <geom type="capsule" fromto="-0.023 0 0 0.023 0 0" size="0.0018" material="prop_mat" contype="0" conaffinity="0"/>
+        <geom type="capsule" fromto="0 -0.023 0 0 0.023 0" size="0.0018" material="prop_mat" contype="0" conaffinity="0"/>
+      </body>
+
+      <!-- Actuator Sites: pos matches CF2X motor positions exactly -->
+      <site name="s0" pos=" 0.028  0.028 0"/>
+      <site name="s1" pos="-0.028  0.028 0"/>
+      <site name="s2" pos="-0.028 -0.028 0"/>
+      <site name="s3" pos=" 0.028 -0.028 0"/>
+    </body>
+
+    <!-- Target marker ball (moved from Python each step) -->
+    <body name="ref" mocap="true" pos="0 0 1">
+      <geom name="refball" type="sphere" size="0.018" rgba="0.1 1.0 0.25 0.65" contype="0" conaffinity="0" mass="0"/>
+    </body>
+  </worldbody>
+
+  <!-- Actuators: gear[5] gives reaction yaw torque.
+       Motors 0 & 2 (CCW) -> yaw reaction torque -0.0251
+       Motors 1 & 3 (CW)  -> yaw reaction torque +0.0251
+  -->
+  <actuator>
+    <motor name="m0" site="s0" gear="0 0 1 0 0 -0.0251" ctrllimited="true" ctrlrange="0 0.15"/>
+    <motor name="m1" site="s1" gear="0 0 1 0 0  0.0251" ctrllimited="true" ctrlrange="0 0.15"/>
+    <motor name="m2" site="s2" gear="0 0 1 0 0 -0.0251" ctrllimited="true" ctrlrange="0 0.15"/>
+    <motor name="m3" site="s3" gear="0 0 1 0 0  0.0251" ctrllimited="true" ctrlrange="0 0.15"/>
+  </actuator>
+</mujoco>
