@@ -33,7 +33,7 @@ from gym_pybullet_drones.control.DSLPIDControl import DSLPIDControl
 # Config
 # ---------------------------------------------------------------------------
 OUT_DIR = "data/raw"
-N_EPISODES = 2
+N_EPISODES = 200
 EPISODE_LEN_SEC = 8.0
 SIM_FREQ = 240          # Hz, physics
 CTRL_FREQ = 48           # Hz, control/logging rate
