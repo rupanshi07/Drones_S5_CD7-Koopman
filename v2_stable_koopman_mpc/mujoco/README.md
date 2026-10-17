@@ -1,10 +1,10 @@
-# 🚁 Koopman-MPC Quadrotor Simulation in MuJoCo
+#  Koopman-MPC Quadrotor Simulation in MuJoCo
 
 A physics-accurate **MuJoCo simulation** of an autonomous Crazyflie 2.X quadrotor flying over complex 3D terrain (hills, mountains, canyons) using **Data-Driven Koopman Model Predictive Control (Koopman-MPC)**, benchmarked against classical **PID** and **LQR** controllers.
 
 ---
 
-## 🌟 What Is This Project About? (In Simple Terms)
+##  What Is This Project About? (In Simple Terms)
 
 Controlling a drone over hills and mountain peaks is difficult because:
 1. **Complex Aerodynamics:** When a drone tilts to move forward, it also loses vertical lift.
@@ -18,7 +18,7 @@ This project implements an intelligent controller called **Koopman-MPC** that so
 
 ---
 
-## 🧠 How Does Koopman-MPC Work?
+##  How Does Koopman-MPC Work?
 
 ```
 ┌────────────────────────┐      ┌───────────────────────────┐      ┌───────────────────────────┐      ┌─────────────────────────┐
@@ -46,14 +46,14 @@ This project implements an intelligent controller called **Koopman-MPC** that so
 
 ---
 
-## 🏆 Which Controller Is Better? (PID vs. LQR vs. Koopman-MPC)
+##  Which Controller Is Better? (PID vs. LQR vs. Koopman-MPC)
 
 | Feature | PID | LQR | **Koopman-MPC (This Project)** |
 | :--- | :---: | :---: | :---: |
 | **Driving Style** | **Reactive:** Acts only *after* error happens | **Local Linear:** Assumes drone is always near hover | **Predictive:** Plans 10 steps ahead into the future |
-| **Handles Fast Turns & Tilt** | ⚠️ Can lose control in sharp banks | ⚠️ Accuracy degrades when tilting $>15^\circ$ | **✅ Built-in attitude damping guarantees upright flight** |
-| **Respects Motor RPM Limits** | ❌ No (can command impossible RPM) | ❌ No (unconstrained) | **✅ Yes (Strictly limits between 0 and 21,713 RPM)** |
-| **Survives Sudden Cargo (+25%)** | Recovers slowly with overshoot | Sags heavily (Min clearance drops to $1.07\text{ m}$) | **✅ Holds safe $1.28\text{ m} \to 1.50\text{ m}$ clearance with zero ground touch** |
+| **Handles Fast Turns & Tilt** |  Can lose control in sharp banks |  Accuracy degrades when tilting $>15^\circ$ | ** Built-in attitude damping guarantees upright flight** |
+| **Respects Motor RPM Limits** |  No (can command impossible RPM) |  No (unconstrained) | **Yes (Strictly limits between 0 and 21,713 RPM)** |
+| **Survives Sudden Cargo (+25%)** | Recovers slowly with overshoot | Sags heavily (Min clearance drops to $1.07\text{ m}$) | ** Holds safe $1.28\text{ m} \to 1.50\text{ m}$ clearance with zero ground touch** |
 
 ---
 
@@ -64,24 +64,24 @@ This project implements an intelligent controller called **Koopman-MPC** that so
 
 | Controller | Status | Average Error (RMSE) | Max Error | Lowest Clearance (AGL) |
 | :--- | :---: | :---: | :---: | :---: |
-| **PID** | ✅ OK | 0.034 m (3.4 cm) | 0.124 m | 1.487 m |
-| **LQR** | ✅ OK | 0.092 m (9.2 cm) | 0.282 m | 1.439 m |
-| **Koopman-MPC** | ✅ **OK** | **0.200 m (20 cm)** | **0.391 m** | **1.423 m** |
+| **PID** |  OK | 0.034 m (3.4 cm) | 0.124 m | 1.487 m |
+| **LQR** |  OK | 0.092 m (9.2 cm) | 0.282 m | 1.439 m |
+| **Koopman-MPC** |  **OK** | **0.200 m (20 cm)** | **0.391 m** | **1.423 m** |
 
 ### 2. Extreme Disturbance Flight (Heavy Cargo + Strong Wind Gust)
 *Same flight with **$+25\%$ extra cargo mass** dropped at $t=3\text{s}$ and a **wind gust** from $t=3\text{s}$ to $5\text{s}$:*
 
 | Controller | Status | Average Error (RMSE) | Lowest Clearance (AGL) | Behavior Under Disturbance |
 | :--- | :---: | :---: | :---: | :--- |
-| **PID** | ✅ OK | 0.091 m | 1.336 m | Error spikes when load drops, recovers via integral term |
-| **LQR** | ✅ OK | 0.231 m | 1.076 m | Significant altitude loss under load (sags by nearly half a meter) |
-| **Koopman-MPC** | ✅ **OK** | **0.770 m** | **1.158 m** | **Instantly boosts RPM ($14,470 \to 16,100$) to hold safe altitude** |
+| **PID** |  OK | 0.091 m | 1.336 m | Error spikes when load drops, recovers via integral term |
+| **LQR** | OK | 0.231 m | 1.076 m | Significant altitude loss under load (sags by nearly half a meter) |
+| **Koopman-MPC** |  **OK** | **0.770 m** | **1.158 m** | **Instantly boosts RPM ($14,470 \to 16,100$) to hold safe altitude** |
 
 ![Benchmark Comparison](comparison.png)
 
 ---
 
-## 📈 Understanding the 4 Graphs Above
+## Understanding the 4 Graphs Above
 
 1. **Top-Left (Top-down path):**
    * **Green dashed line (`--`):** The ideal path the drone was asked to fly.
@@ -97,7 +97,7 @@ This project implements an intelligent controller called **Koopman-MPC** that so
 
 ---
 
-## 🎮 How to Run the Simulations
+##  How to Run the Simulations
 
 Open your command prompt and navigate to the `mujoco` directory:
 ```cmd
@@ -142,7 +142,7 @@ python drone_sim.py --terrain rolling
 
 ---
 
-## 🗂️ File Guide
+##  File Guide
 
 * **`cf2x_terrain.xml`** &mdash; 3D physics model of the Crazyflie 2.X quadrotor (carbon fiber deck, PCB, motors, LED lights, landing pegs).
 * **`koopman_mpc.py`** &mdash; The core Koopman-MPC controller with 27-state lifting and adaptive hover trim.
