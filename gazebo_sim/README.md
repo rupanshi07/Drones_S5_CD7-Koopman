@@ -78,3 +78,25 @@ Model: https://fuel.gazebosim.org/1.0/OpenRobotics/models/X3 UAV/4
 - The X3 is much larger than the Crazyflie used in the PyBullet experiments (1.52 kg vs 0.027 kg),
   so Gazebo results will not be numerically comparable to PyBullet results, and LQR weights will need retuning.
 - The model cache (`~/.gz`) is not included in this repo.
+
+
+## Update: closed-loop height hold
+
+Scripts (all in `scripts/`): `read_pose.py` (pose feed), `motor_step_test.py` (thrust check), `hover_pid.py` (height PID).
+Log from the last hover run: `results/hover_pid_log.csv`.
+
+| Test | Result |
+|---|---|
+| Pose feed (`read_pose.py`) | drone at rest stays at z = 0.055 m with no commands; sim time runs a little slower than wall time, so controllers use the sim clock from the pose header |
+| Motor step, 700 rad/s (`motor_step_test.py`) | predicted 1.223 m/s^2, measured 1.083 m/s^2; the gap is about 1.3% in thrust terms (rough fit, one run) |
+| Height PID (`hover_pid.py`), target 0.3 m, ramp 0.048 m/s, 48 Hz | overshoot +0.026 m, z = 0.306 m at 12 s, RMSE (last 5 s) 0.0157 m, max tilt 0.03 deg |
+
+Gains (first guess, not tuned): Kp 6, Kd 5, Ki 1.5. Thrust is converted to motor speed with omega = sqrt(F / (4 kf)) and sent equally to all four motors.
+
+Verified now: hover speed is about 660 rad/s (the motors held 660.0-660.1 rad/s with near-zero vertical speed);
+the Python bindings are `python3-gz-transport13` with `gz.transport13` and `gz.msgs10`.
+
+Still unverified: yaw signs and motor-to-rotor mapping; the meaning of momentConstant.
+
+Next: attitude control (needed once wind or payload create tilt), then LQR, then wind and payload disturbances, then the scenarios.
+Note: this test controls height only, with equal motor speeds, so it cannot resist sideways forces or an off-centre load.
