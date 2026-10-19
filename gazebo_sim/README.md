@@ -148,6 +148,11 @@ tau_pitch = kf 0.13 (-s0 + s1 - s2 + s3); tau_yaw = c kf (-s0 - s1 + s2 + s3), c
 
 Now verified: motor numbering, yaw signs, inertias, rotor positions. Still unverified: yaw coefficient (rough only).
 
+CONFIRMED (bump test): motors 0..3 at (x,y) = (+.13,-.22), (-.13,+.20), (+.13,+.22), (-.13,-.20); yaw sign motors 0,1 = -, motors 2,3 = +; roll/pitch authority matches inertias within 10%; yaw coefficient c about 0.005 (documented 0.016, rough).
+ALLOCATION: F = kf(s0+s1+s2+s3); tau_roll = kf(-.22 s0 + .20 s1 + .22 s2 - .20 s3); tau_pitch = kf*.13(-s0+s1-s2+s3); tau_yaw = c*kf(-s0-s1+s2+s3); s_i = omega_i^2.
+SCRIPTS added: motor_bump_test.py (committed on gazebo-lqr), lqr_hover.py <wind_N> <payload_N> [onset_s] (needs worlds/quadcopter_wrench.sdf, python3-numpy, python3-scipy).
+GIT LESSON: merge a PR only after the last push, or open a new PR for later commits.
+
 
 ## Update: LQR hover with payload and wind
 
@@ -165,3 +170,25 @@ Offsets under disturbance are expected: there is no integral term (the PyBullet 
 Wind 2.8 N is a rough scaling of PyBullet's 0.05 N on 0.027 kg (about 19% of weight), not an exact equivalence.
 One deterministic run per condition. Wind and payload together not yet tested.
 Logs: `results/lqr_wind*_payload*_log.csv`.
+
+RESULTS (Gazebo, X3, LQR no integral, disturbance at 7.5 s): none -> z 0.300, x=y=0; payload 2 N -> sag 0.055 m, motors 702.9 (predicted 702.9); wind 2.8 N -> x +0.446 m, tilt 10.65 deg (physics 10.65), motors 665.8 (physics 665.8). LQR and PID logs in gazebo_sim/results/*.csv.
+SCRIPTS added: lqr_hover.py, pid_hover.py (both <wind_N> <payload_N> [onset_s]; PID has position/attitude/altitude loops with integral action), run in worlds/quadcopter_wrench.sdf.
+NEXT: PID results; scenario runner for the six scenarios (wind from start in 2,3,6; wind from mid in 4; payload mid in 5,6) saving .npz like PyBullet (states, actions, disturbance_onset_step); push; merge PR once after last push.
+
+
+## Update: PID with position, attitude and altitude loops
+
+Script: `scripts/pid_hover.py <wind_N> <payload_N> [onset_s]` (run in `worlds/quadcopter_wrench.sdf`).
+Loops: x/y PID -> desired tilt (small angle), attitude PD -> torques (wn 10 rad/s, zeta 0.9), altitude PID (thrust divided by cos of tilt). Gains are a first guess.
+Integral action on x, y, z.
+
+| Run (disturbance at t = 7.5 s) | Result |
+|---|---|
+| none | z = 0.300 m, x = y = 0 |
+| payload 2 N | min z 0.195 m, z = 0.296 m at 15 s; motors 702.9 rad/s (predicted 702.9) |
+| wind 2.8 N | max x 0.370 m, x = -0.009 m at 15 s, tilt 10.6 deg, motors 665.7 (physics 665.8) |
+| wind + payload | max x 0.310 m, x = -0.008 m, z = 0.295 m, tilt 9.4 deg, motors 707.6 (physics 707.7, tilt 9.41) |
+
+LQR (no integral term) under the same disturbances stays offset (payload sag 0.055 m, wind offset +0.446 m); PID returns to the reference.
+The PID dip under payload is deeper because its height gain is softer (15 N/m vs about 36 N/m effective for the LQR); the lasting offset is the key difference.
+Single deterministic runs, untuned gains. Logs: `results/pid_wind*_payload*_log.csv`.
