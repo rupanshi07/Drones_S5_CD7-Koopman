@@ -147,3 +147,21 @@ F = kf (s0+s1+s2+s3); tau_roll = kf (-0.22 s0 + 0.20 s1 + 0.22 s2 - 0.20 s3);
 tau_pitch = kf 0.13 (-s0 + s1 - s2 + s3); tau_yaw = c kf (-s0 - s1 + s2 + s3), c about 0.005.
 
 Now verified: motor numbering, yaw signs, inertias, rotor positions. Still unverified: yaw coefficient (rough only).
+
+
+## Update: LQR hover with payload and wind
+
+Script: `scripts/lqr_hover.py <wind_N> <payload_N> [onset_s]` (needs `worlds/quadcopter_wrench.sdf`; uses system python3 with numpy and scipy).
+12-state LQR (position, velocity, roll/pitch/yaw, rates) with the same A and B structure as the PyBullet LQR, discretised at 48 Hz, X3 constants,
+motor allocation from the bump test. Weights by Bryson's rule (first guess): Q = 1/(max acceptable)^2, R = 1/(max input)^2. Velocity and rates come from filtered finite differences of the pose. No integral action.
+
+| Run (disturbance at t = 7.5 s) | Result |
+|---|---|
+| none | z = 0.300 m, x = y = 0.000, tilt 0.00 deg, motors 660.0 rad/s |
+| payload 2 N (down) | z dips to 0.245 m and stays (sag 0.055 m, about 36 N/m effective stiffness); motors 702.9 rad/s (predicted 702.9) |
+| wind 2.8 N (+x) | x settles at +0.446 m, tilt 10.65 deg (physics: atan(2.8/14.9) = 10.65), motors 665.8 rad/s (physics: 665.8), z = 0.293 m, y about 0 |
+
+Offsets under disturbance are expected: there is no integral term (the PyBullet LQR also sagged under payload).
+Wind 2.8 N is a rough scaling of PyBullet's 0.05 N on 0.027 kg (about 19% of weight), not an exact equivalence.
+One deterministic run per condition. Wind and payload together not yet tested.
+Logs: `results/lqr_wind*_payload*_log.csv`.
