@@ -100,3 +100,28 @@ Still unverified: yaw signs and motor-to-rotor mapping; the meaning of momentCon
 
 Next: attitude control (needed once wind or payload create tilt), then LQR, then wind and payload disturbances, then the scenarios.
 Note: this test controls height only, with equal motor speeds, so it cannot resist sideways forces or an off-centre load.
+
+
+## Update: payload disturbance
+
+World: `worlds/quadcopter_wrench.sdf` is a copy of Gazebo's `quadcopter.sdf` with the `ApplyLinkWrench` system added.
+The original `quadcopter.sdf` has no wrench topics, so payload and wind runs MUST use this world:
+`gz sim -r worlds/quadcopter_wrench.sdf` (run from the `gazebo_sim` folder). Force topic: `/world/quadcopter/wrench/persistent` (`gz.msgs.EntityWrench`, entity "x3", type MODEL).
+
+Script: `scripts/hover_pid_payload.py <newtons>`. Height PID, target 0.3 m, 48 Hz, ramp 0.048 m/s.
+Gains (first guess, not tuned): Kp 15, Kd 8, Ki 6, integral clamp 8 N. A persistent downward force is applied at t = 7.5 s of simulation time (mid-flight, as in the PyBullet scenarios).
+
+| Run | Result |
+|---|---|
+| 0 N (baseline) | peak z = 0.320 m at about 6 s, back to 0.300 m by about 14 s, motors 660 rad/s, tilt <= 0.02 deg |
+| 2 N at 7.5 s | dips to about 0.196 m (0.104 m below target), settles within 2 cm in 4.71 s after onset, motors settle at 702.9 rad/s (predicted 702.9), z = 0.296 m at 15 s and still converging, tilt <= 0.07 deg |
+
+Logs: `results/hover_pid_payload_0N_log.csv`, `results/hover_pid_payload_2N_log.csv` (columns: t, z_ref, z, vz, omega, tilt_deg, force_applied).
+
+Simplification: the payload is a constant downward force in the world frame on the model's main link. Mass and inertia do not change, so this is not identical to the mass change used in PyBullet.
+2 N is about 13% of the drone's weight; PyBullet's 0.01 kg on a 0.027 kg drone was about 37%.
+Single run per condition.
+
+Verified now: the wrench plugin acts on the drone (entity "x3", type MODEL); mass and thrust constant confirmed under load.
+Still unverified: yaw signs and motor-to-rotor mapping; the meaning of momentConstant.
+Not done: wind, attitude control (equal motor speeds cannot resist a sideways force), LQR, the six scenarios.
