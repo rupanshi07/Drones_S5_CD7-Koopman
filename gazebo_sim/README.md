@@ -125,3 +125,25 @@ Single run per condition.
 Verified now: the wrench plugin acts on the drone (entity "x3", type MODEL); mass and thrust constant confirmed under load.
 Still unverified: yaw signs and motor-to-rotor mapping; the meaning of momentConstant.
 Not done: wind, attitude control (equal motor speeds cannot resist a sideways force), LQR, the six scenarios.
+
+
+## Update: motor mapping and yaw signs (bump test)
+
+Script: `scripts/motor_bump_test.py <motor>`. It holds 0.3 m with the height PID for 10 s of sim time, then adds +60 rad/s to ONE motor for 0.3 s and reads the change in roll, pitch and yaw.
+
+| Motor | Position (x, y) m | d_roll deg | d_pitch deg | d_yaw deg |
+|---|---|---|---|---|
+| 0 | (+0.13, -0.22) | -12.26, -10.60 | -3.68, -3.18 | -0.060, -0.091 |
+| 1 | (-0.13, +0.20) | +10.79 | +3.56 | -0.094 |
+| 2 | (+0.13, +0.22) | +11.27 | -3.38 | +0.080 |
+| 3 | (-0.13, -0.20) | -9.38 | +3.09 | +0.115 |
+
+Roll and pitch match a prediction of 0.5 * (dF * arm / I) * t^2 with dF = 0.708 N (roll 10.5-11.6, pitch 3.4 deg), within about 10%. This checks the inertias, rotor positions and kf.
+Yaw signs: motors 0 and 1 negative, motors 2 and 3 positive (consistent with the model file's spin directions).
+Yaw strength: with momentConstant = 0.016 I predict about 0.30 deg; measured about 0.09 deg on average. The effective coefficient is about 0.005 (rough: yaw changes are under 0.1 deg and motor 0's two runs differ by 40%).
+
+Allocation (s_i = omega_i^2):
+F = kf (s0+s1+s2+s3); tau_roll = kf (-0.22 s0 + 0.20 s1 + 0.22 s2 - 0.20 s3);
+tau_pitch = kf 0.13 (-s0 + s1 - s2 + s3); tau_yaw = c kf (-s0 - s1 + s2 + s3), c about 0.005.
+
+Now verified: motor numbering, yaw signs, inertias, rotor positions. Still unverified: yaw coefficient (rough only).
