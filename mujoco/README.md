@@ -7,8 +7,7 @@
 
 
 ## What this project does
-
-This project studies how an autonomous Crazyflie $2.\mathrm{X}$ quadrotor follows a dynamic $3\mathrm{D}$ spatial trajectory while traversing complex terrain whose height continuously changes. The simulation uses the **MuJoCo** physics engine to compute the rigid-body equations of motion, rotor aerodynamics, gravity vector, and surface contact dynamics. High-level Python control loops supply the reference path, observe the continuous state vector $x_k \in \mathbb{R}^{18}$, optimize motor actuator setpoints $\mathrm{RPM}_i \in [0, \mathrm{RPM}_{\max}]$, and log closed-loop tracking metrics.
+This project studies how an autonomous Crazyflie $2.X$ quadrotor follows a dynamic $3D$ spatial trajectory while traversing complex terrain whose height continuously changes. The simulation uses the **MuJoCo** physics engine to compute the rigid-body equations of motion, rotor aerodynamics, gravity vector, and surface contact dynamics. High-level Python control loops supply the reference path, observe the continuous state vector $x_k \in \mathbb{R}^{18}$, optimize motor actuator setpoints $RPM_i \in [0, RPM_{max}]$, and log closed-loop tracking metrics.
 
 <p align="center">
   <img src="mujoco_simulation_screenshot.png" alt="MuJoCo simulation viewer showing the quadrotor and visualized flight paths" width="90%">
@@ -29,28 +28,24 @@ The benchmark suite evaluates performance against two classical control architec
 
 ### Simulation loop at a glance
 
-```text
-Terrain Heightfield + XML Drone Model
-                 │
-                 ▼
-MuJoCo State: p_k in R^3, v_k in R^3, R_k in SO(3), omega_k in R^3 (18-dim)
-                 │
-                 ▼
-Reference Trajectory: p_ref(t) = [x_ref(t), y_ref(t), h_ground(x,y) + h_target]
-                 │
-                 ▼
-Controller: PID, LQR, or Koopman-MPC
-                 │
-                 ▼
-Motor Actuation: 4 rotor commands RPM_i in [0, RPM_max]
-                 │
-                 ▼
-MuJoCo Physics Step: dt_physics = 1/240 s (5 substeps per control interval)
-                 │
-                 ├───────► Record: p_k, e_k, h_AGL(t), RPM_i
-                 │
-                 └───────► Repeat until episode duration T is reached
+
+```mermaid
+flowchart TD
+    A["Terrain heightfield + XML drone model"]
+    B["$$\text{MuJoCo state: } p_k \in \mathbb{R}^3,\ v_k \in \mathbb{R}^3,\ R_k \in SO(3),\ \omega_k \in \mathbb{R}^3 \ (x_k \in \mathbb{R}^{18})$$"]
+    C["$$\text{Reference: } p_{\mathrm{ref}}(t) = [x_{\mathrm{ref}}(t),\ y_{\mathrm{ref}}(t),\ h_{\mathrm{ground}}(x,y) + h_{\mathrm{target}}]^\top$$"]
+    D["Controller: PID, LQR, or Koopman-MPC"]
+    E["$$\text{Motor actuation: } \mathrm{RPM}_i \in [0,\ \mathrm{RPM}_{\max}],\ i = 1,\dots,4$$"]
+    F["$$\text{MuJoCo physics step: } \Delta t_{\mathrm{physics}} = \tfrac{1}{240}\,\mathrm{s}\ \text{(5 substeps per control interval)}$$"]
+    G["$$\text{Record: } p_k,\ e_k,\ h_{\mathrm{AGL}}(t),\ \mathrm{RPM}_i$$"]
+    H["$$\text{Repeat until episode duration } T \text{ is reached}$$"]
+
+    A --> B --> C --> D --> E --> F
+    F --> G
+    F --> H
+    H -. next step .-> B
 ```
+
 
 The underlying XML model defines drone inertia, motor actuators, and terrain collision meshes. `mujoco_quad_env.py` bridges MuJoCo with Python controllers, `terrain.py` generates procedural height fields, `run_koopman_mujoco.py` executes Koopman-MPC flights, `run_sim.py` benchmarks the controllers, and `drone_sim.py` provides an interactive GUI.
 
@@ -95,13 +90,13 @@ $$\Delta t_{\text{control}} = 5 \times \Delta t_{\text{physics}} = \frac{5}{240}
 
 The environment state vector $x_k \in \mathbb{R}^{18}$ is structured as:
 
-$$x_k = \begin{bmatrix} p_k \\ v_k \\ \operatorname{vec}(R_k) \\ \omega_k \end{bmatrix} \in \mathbb{R}^{18}$$
+$$x_k = \begin{bmatrix} p_k \\ v_k \\ \mathrm{vec}(R_k) \\ \omega_k \end{bmatrix} \in \mathbb{R}^{18}$$
 
 where:
 - $p_k = [x_k, y_k, z_k]^\top \in \mathbb{R}^3$ is world-frame inertial position.
 - $v_k = [\dot{x}_k, \dot{y}_k, \dot{z}_k]^\top \in \mathbb{R}^3$ is linear velocity in world coordinates.
 - $R_k \in SO(3) \subset \mathbb{R}^{3 \times 3}$ is the body-to-world rotation matrix flattened in row-major order:
-  $$\operatorname{vec}(R_k) = [R_{xx}, R_{xy}, R_{xz}, R_{yx}, R_{yy}, R_{yz}, R_{zx}, R_{zy}, R_{zz}]^\top \in \mathbb{R}^9$$
+  $$\mathrm{vec}(R_k) = [R_{xx}, R_{xy}, R_{xz}, R_{yx}, R_{yy}, R_{yz}, R_{zx}, R_{zy}, R_{zz}]^\top \in \mathbb{R}^9$$
 - $\omega_k = [\omega_x, \omega_y, \omega_z]^\top \in \mathbb{R}^3$ is the angular velocity vector.
 
 Total state dimensionality: $3 + 3 + 9 + 3 = 18$.
@@ -141,10 +136,17 @@ $$h_{\text{AGL}}(t) > 0, \quad \forall t \ge 0$$
 Disturbances are systematically injected to benchmark robustness:
 - **Payload Disturbance:** Total mass scales by factor $(1 + \delta_m)$ where $\delta_m \in \{0.0, 0.20, 0.40\}$ ($+0\%$, $+20\%$, $+40\%$ cargo load), introduced at $t = 3\,\text{s}$:
   $$m_{\text{dist}} = m \times (1 + \delta_m)$$
-- **Wind Gust Disturbance:** Horizontal force $F_{\text{wind}} \in \{0.0\,\text{N}, 0.015\,\text{N}, 0.03\,\text{N}\}$ applied during the gust window $t \in [3\,\text{s}, 5\,\text{s}]$:
-  $$F_w = \begin{bmatrix} F_{\text{wind}} \cos(\theta_w) \\ F_{\text{wind}} \sin(\theta_w) \\ 0 \end{bmatrix}$$
 
----
+- **Wind Gust Disturbance:** Horizontal force $F_{\text{wind}} \in \{0.0\,\text{N}, 0.015\,\text{N}, 0.03\,\text{N}\}$ applied during the gust window $t \in [3\,\text{s}, 5\,\text{s}]$.
+
+$$
+F_w =
+\begin{bmatrix}
+F_{\text{wind}} \cos(\theta_w) \\
+F_{\text{wind}} \sin(\theta_w) \\
+0
+\end{bmatrix}
+$$
 
 ## The three controllers
 
