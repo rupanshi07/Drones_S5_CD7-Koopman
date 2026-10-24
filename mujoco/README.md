@@ -4,283 +4,244 @@
 
 # Koopman-MPC Quadrotor Simulation in MuJoCo
 
-<p align="center">
-  <img src="mujoco_simulation_screenshot.png" alt="MuJoCo simulation viewer showing the quadrotor and visualized flight paths" width="90%">
-</p>
-
-<p align="center"><em>Interactive MuJoCo simulation: the quadrotor is shown with visual trajectory/reference markers in the scene.</em></p>
-
 > **How to read this README:** Start with the project overview and simulation workflow, then use the file guide and controller explanations to understand how the code fits together. The comparison gallery later in this document contains the saved experiments; each figure is labeled by terrain, payload fraction, and wind magnitude.
 
 ## What this project does
 
-This project studies how a small quadrotor can follow a moving 3-D target while flying over terrain whose height changes. The simulation uses **MuJoCo** to calculate the drone's motion from its model, motor thrust, gravity, and contact with the ground. Python code supplies the flight reference, reads the drone's state, computes motor commands, and records the result.
+This project studies how an autonomous Crazyflie $2.\mathrm{X}$ quadrotor follows a dynamic $3\mathrm{D}$ spatial trajectory while traversing complex terrain whose height continuously changes. The simulation uses the **MuJoCo** physics engine to compute the rigid-body equations of motion, rotor aerodynamics, gravity vector, and surface contact dynamics. High-level Python control loops supply the reference path, observe the continuous state vector $x_k \in \mathbb{R}^{18}$, optimize motor actuator setpoints $\mathrm{RPM}_i \in [0, \mathrm{RPM}_{\max}]$, and log closed-loop tracking metrics.
 
-The central controller is **Koopman Model Predictive Control (Koopman-MPC)**. Instead of predicting the drone directly with a fully nonlinear model, the project represents its state using a set of features called *lifted observables*. A linear model is fitted to state-transition data in this feature space. At every control step, the MPC controller uses that model to predict future behavior and chooses motor commands intended to reduce tracking error while keeping commands within limits. Only the first action is applied; the state is measured again and the optimization is solved again.
+<p align="center">
+  <img src="mujoco_simulation_screenshot.png" alt="MuJoCo simulation viewer showing the quadrotor and visualized flight paths" width="90%">
+</p>
 
-The project also includes two classical comparison controllers:
+<p align="center"><em>Figure 1: Interactive MuJoCo simulation environment: the Crazyflie quadrotor is rendered over 3D heightfield terrain with active flight path tracking and reference ribbons.</em></p>
 
-- **PID:** a cascaded proportional–integral–derivative controller. Position errors are converted into desired motion, then an attitude/rate controller and a motor mixer produce four motor RPM commands.
-- **LQR:** a cascaded controller whose feedback gains are obtained from a discrete-time linear-quadratic regulator design for simplified double-integrator models. The implementation also includes a small integral term to reduce steady offsets under load.
-- **Koopman-MPC:** a predictive controller using the fitted lifted-state model and a constrained quadratic optimization problem.
+The central controller is **Data-Driven Koopman Model Predictive Control (Koopman-MPC)**. Rather than approximating drone dynamics via local linearization or solving computationally prohibitive non-linear programs (NLP) online, the system represents state transitions in an expanded Hilbert observable space via a lifting mapping:
 
-The point of the comparison is not to assume that one controller always wins. It is to observe how each controller follows the same reference when the terrain, added mass, or externally applied wind force changes. The plots show the reference path, each controller's path, altitude behavior, position error, and clearance above the terrain.
+$$\psi(x): \mathbb{R}^{18} \to \mathbb{R}^{27}$$
+
+A global linear state transition operator $(A, B)$ is fitted to empirical transition pairs using Extended Dynamic Mode Decomposition (EDMD). At each sampling interval $\Delta t_{\text{control}} = \frac{1}{48}\,\text{s}$, the MPC solves a convex Quadratic Program (QP) over a prediction horizon $H_p = 10$, enforcing motor velocity bounds while minimizing spatial tracking error and control increments. Applying a receding-horizon policy, only the first action $u_0^*$ is executed before the cycle repeats.
+
+The benchmark suite evaluates performance against two classical control architectures:
+- **PID:** A cascaded Proportional-Integral-Derivative controller converting outer-loop position errors into virtual acceleration vectors, mapped to rotor speeds through an inner attitude/angular rate loop and thrust mixer.
+- **LQR:** A discrete-time Linear-Quadratic Regulator operating on decomposed double-integrator dynamics with Riccati-derived state-feedback gain matrices $K_{\text{lqr}}$ and integral trim compensation.
+- **Koopman-MPC:** A predictive controller using the lifted observable model $\psi(x)$ and convex QP optimization under motor saturation constraints.
 
 ### Simulation loop at a glance
 
 ```text
-Terrain + XML drone model
-          |
-          v
-MuJoCo state: position, velocity, attitude, angular velocity
-          |
-          v
-Reference generator: x/y path + terrain height + desired clearance
-          |
-          v
+Terrain Heightfield + XML Drone Model
+                 │
+                 ▼
+MuJoCo State: p_k in R^3, v_k in R^3, R_k in SO(3), omega_k in R^3 (18-dim)
+                 │
+                 ▼
+Reference Trajectory: p_ref(t) = [x_ref(t), y_ref(t), h_ground(x,y) + h_target]
+                 │
+                 ▼
 Controller: PID, LQR, or Koopman-MPC
-          |
-          v
-Four motor RPM commands (clipped to the allowed range)
-          |
-          v
-MuJoCo advances physics for several substeps
-          |
-          +------> record state, tracking error and altitude clearance
-          |
-          +------> repeat until the episode ends or a failure is detected
+                 │
+                 ▼
+Motor Actuation: 4 rotor commands RPM_i in [0, RPM_max]
+                 │
+                 ▼
+MuJoCo Physics Step: dt_physics = 1/240 s (5 substeps per control interval)
+                 │
+                 ├───────► Record: p_k, e_k, h_AGL(t), RPM_i
+                 │
+                 └───────► Repeat until episode duration T is reached
 ```
 
-The XML model defines the drone and terrain collision geometry. `mujoco_quad_env.py` is the Python adapter between that model and the controllers. `terrain.py` creates terrain height fields. `run_koopman_mujoco.py` runs the Koopman-MPC controller, `run_sim.py` runs the requested controller benchmark, and `drone_sim.py` launches the interactive dashboard.
+The underlying XML model defines drone inertia, motor actuators, and terrain collision meshes. `mujoco_quad_env.py` bridges MuJoCo with Python controllers, `terrain.py` generates procedural height fields, `run_koopman_mujoco.py` executes Koopman-MPC flights, `run_sim.py` benchmarks the controllers, and `drone_sim.py` provides an interactive GUI.
+
+---
 
 ## Project files and how they work together
 
-All paths below are relative to the top-level `mujoco/` directory:
+All paths below are relative to the `mujoco/` directory:
 
 | File | Role in the complete workflow |
 |---|---|
-| `cf2x_terrain.xml` | Main MuJoCo scene: quadrotor body, rotors/actuators, terrain height field, reference marker, and visual elements. |
-| `mjmodel.xml` | Additional MuJoCo XML asset in this directory. |
-| `mujoco_quad_env.py` | Loads the XML, configures physics and control rates, exposes the 18-value state, applies motor thrust, updates the terrain, injects payload/wind, and computes altitude above ground. |
-| `terrain.py` | Generates terrain height fields and provides terrain-height and terrain-preset helpers. |
-| `koopman_mpc.py` | Defines the lifting function, gathers training transitions, fits the lifted linear model, saves/loads model matrices, and implements the Koopman-MPC optimizer. |
-| `controllers.py` | Implements the cascaded PID and LQR baselines and maps total thrust/torque requests to four motor RPMs. |
-| `run_koopman_mujoco.py` | Runs a single Koopman-MPC flight, draws the target and flight trails in the viewer, applies optional disturbances, logs metrics, and saves `mujoco_run_koopman.npz`. |
-| `run_sim.py` | Runs PID, LQR, Koopman-MPC, or all three sequentially. It prints RMSE, maximum error and minimum AGL, and saves `comparison.png`. |
-| `run_pid_mujoco.py`, `run_lqr_mujoco.py` | Convenience launchers for the individual baseline controllers. |
-| `drone_sim.py` | Interactive flight dashboard, including terrain and live disturbance controls. |
-| `selftest.py`, `test_koopman_base_in_mujoco.py` | `selftest.py` checks the local model/motor setup. `test_koopman_base_in_mujoco.py` tests the base Koopman-MPC matrices using `../data/koopman_model.npz`. |
-| `run_all_terrain.py` | Runs controller experiments across terrain presets. |
-| `generate_wind_payload_analysis.py` | Analyzes existing run logs for wind/payload effects. |
-| `analysis/run_all_comparisons.py` | Runs and stores one controller-comparison figure. |
-| `analysis/run_batch_comparisons.py` | Runs a grid of terrain, payload and wind configurations and stores each resulting PNG in `analysis/comparisons/`. |
-| `analysis/generate_summary_plots.py` | Summarizes existing CSV logs and creates metric plots/report output. |
-| `analysis/generate_plots.py` | Produces plots from a summary CSV. |
-| `analysis/run_pipeline.py` | Optional plotting/report pipeline for an existing summary CSV. |
-| `analysis/comparisons/` | Contains the 36 saved four-panel comparison figures discussed below. |
-| `comparison.png`, `comparison_nominal.png`, `stress_summary.png` | Additional figures already saved in the directory. |
+| `cf2x_terrain.xml` | Main MuJoCo scene definition: Crazyflie $2.\mathrm{X}$ airframe, motors, heightfield terrain, and camera configurations. |
+| `mjmodel.xml` | Compiled MuJoCo model cache and asset descriptor. |
+| `mujoco_quad_env.py` | Python simulation interface: loads XML, sets physics frequencies, exposes state $x_k \in \mathbb{R}^{18}$, injects disturbances, and computes clearance $h_{\text{AGL}}$. |
+| `terrain.py` | Procedural heightfield generation supporting 8 distinct mathematical terrain topologies. |
+| `koopman_mpc.py` | Implements lifting mapping $\psi(x)$, gathers training data, fits $(A, B)$ via ridge regression, and solves receding-horizon QP via CLARABEL. |
+| `controllers.py` | Implements classical cascaded PID and discrete LQR baselines with rotor mixing algorithms. |
+| `run_koopman_mujoco.py` | Executes Koopman-MPC flights with live trajectory trails, disturbance injection, and `.npz` logging. |
+| `run_sim.py` | Benchmarks PID, LQR, and Koopman-MPC sequentially on identical terrain and exports `comparison.png`. |
+| `run_pid_mujoco.py`, `run_lqr_mujoco.py` | Standalone test runners for individual baseline controllers. |
+| `drone_sim.py` | Real-time interactive flight dashboard with terrain selectors and disturbance sliders. |
+| `selftest.py` | Verifies motor thrust directions, terrain elevation lookups, and collision detection. |
+| `test_koopman_base_in_mujoco.py` | Validates loaded Koopman model matrices $A \in \mathbb{R}^{27 \times 27}, B \in \mathbb{R}^{27 \times 4}$. |
+| `analysis/run_batch_comparisons.py` | Batch generator evaluating a $4 \times 3 \times 3$ grid of simulation conditions ($36$ comparison figures). |
+| `analysis/comparisons/` | Storage repository for all $36$ empirical four-panel comparison figures. |
+
+---
 
 ## The simulation model
 
 ### Physics and timing
 
-The environment uses the Crazyflie-style quadrotor model defined by the XML and sets gravity to \(g=9.8\,\mathrm{m/s^2}\). The defaults in `MujocoQuadEnv` are 240 Hz for physics and 48 Hz for control. Thus the physics step is
+The quadrotor mass is $m = 0.027\,\text{kg}$ with standard gravitational acceleration $g = 9.8\,\text{m/s}^2$. MuJoCo integrates rigid-body equations at a physics frequency of $f_{\text{physics}} = 240\,\text{Hz}$:
 
-\[
-\Delta t_{\mathrm{physics}}=\frac{1}{240}\ \mathrm{s},
-\]
+$$\Delta t_{\text{physics}} = \frac{1}{240}\,\text{s} \approx 0.00417\,\text{s}$$
 
-and each control command is held for five physics substeps, giving
+Control decisions are evaluated at $f_{\text{control}} = 48\,\text{Hz}$, holding each actuator command over $n_{\text{sub}} = 5$ physics substeps:
 
-\[
-\Delta t_{\mathrm{control}}=\frac{5}{240}=\frac{1}{48}\ \mathrm{s}.
-\]
-
-This separation lets MuJoCo integrate the physical motion at a finer time step than the controller update.
+$$\Delta t_{\text{control}} = 5 \times \Delta t_{\text{physics}} = \frac{5}{240} = \frac{1}{48}\,\text{s} \approx 0.02083\,\text{s}$$
 
 ### State vector
 
-The environment returns an 18-dimensional state:
+The environment state vector $x_k \in \mathbb{R}^{18}$ is structured as:
 
-\[
-x_k =
-\begin{bmatrix}
-p_k\\
-v_k\\
-\operatorname{vec}(R_k)\\
-\omega_k
-\end{bmatrix}
-\in\mathbb{R}^{18}.
-\]
+$$x_k = \begin{bmatrix} p_k \\ v_k \\ \operatorname{vec}(R_k) \\ \omega_k \end{bmatrix} \in \mathbb{R}^{18}$$
 
-Here \(p_k=[x_k,y_k,z_k]^\mathsf{T}\) is position, \(v_k=[v_x,v_y,v_z]^\mathsf{T}\) is linear velocity, \(R_k\in\mathbb{R}^{3\times3}\) is the body-to-world rotation matrix flattened in row-major order, and \(\omega_k\in\mathbb{R}^3\) is angular velocity represented in world coordinates by the environment adapter. The flattened rotation matrix has nine values, so \(3+3+9+3=18\).
+where:
+- $p_k = [x_k, y_k, z_k]^\top \in \mathbb{R}^3$ is world-frame inertial position.
+- $v_k = [\dot{x}_k, \dot{y}_k, \dot{z}_k]^\top \in \mathbb{R}^3$ is linear velocity in world coordinates.
+- $R_k \in SO(3) \subset \mathbb{R}^{3 \times 3}$ is the body-to-world rotation matrix flattened in row-major order:
+  $$\operatorname{vec}(R_k) = [R_{xx}, R_{xy}, R_{xz}, R_{yx}, R_{yy}, R_{yz}, R_{zx}, R_{zy}, R_{zz}]^\top \in \mathbb{R}^9$$
+- $\omega_k = [\omega_x, \omega_y, \omega_z]^\top \in \mathbb{R}^3$ is the angular velocity vector.
 
-MuJoCo internally stores the free-joint orientation as a quaternion. The environment converts that orientation to a rotation matrix for the controller's state vector.
+Total state dimensionality: $3 + 3 + 9 + 3 = 18$.
 
-### Motor model and action
+### Motor dynamics and thrust mapping
 
-The environment accepts four rotor RPM values. The thrust applied by rotor \(i\) is modeled as
+Each rotor generates aerodynamic thrust proportional to the square of its rotational speed:
 
-\[
-T_i=k_f\,\mathrm{RPM}_i^2,
-\]
+$$T_i = k_f \, \mathrm{RPM}_i^2, \quad i \in \{1, 2, 3, 4\}$$
 
-where \(k_f\) is the thrust coefficient defined by the environment. The sum of the four thrusts supports the drone's weight; differences between rotor thrusts create roll, pitch and yaw moments. The environment clips commands to
+where $k_f = 3.16 \times 10^{-10}\,\text{N}\cdot\text{s}^2/\text{rad}^2$. Rotor commands are strictly constrained:
 
-\[
-0\leq \mathrm{RPM}_i\leq \mathrm{RPM}_{\max}.
-\]
+$$0 \le \mathrm{RPM}_i \le \mathrm{RPM}_{\max}, \quad \mathrm{RPM}_{\max} = 21{,}703\,\text{RPM}$$
 
-The hover RPM used by the environment is calculated from the nominal mass and gravity:
+The theoretical nominal hover speed supporting total vehicle weight $m g$ is:
 
-\[
-\mathrm{RPM}_{\mathrm{hover}}
-=\sqrt{\frac{mg}{4k_f}}.
-\]
+$$\mathrm{RPM}_{\text{hover}} = \sqrt{\frac{m g}{4 k_f}} = \sqrt{\frac{0.027 \times 9.8}{4 \times 3.16 \times 10^{-10}}} \approx 14{,}468\,\text{RPM}$$
 
-The implementation uses \(m=0.027\,\mathrm{kg}\), \(g=9.8\,\mathrm{m/s^2}\), and \(k_f=3.16\times10^{-10}\) in its RPM-based thrust formula (\(\mathrm{RPM}_{\mathrm{hover}} \approx 14,468\)). The exact values and units are matched to the XML actuator configuration.
+### Terrain heightfield and Above-Ground-Level (AGL)
 
-### Terrain and altitude above ground
+A continuous surface height function $h_{\text{ground}}(x, y)$ is evaluated across the $x$-$y$ plane. The reference altitude tracking profile is defined by:
 
-`terrain.py` creates the height field used by MuJoCo. The terrain height at horizontal location \((x,y)\) is \(h_{\mathrm{ground}}(x,y)\). The reference trajectory follows a sinusoidal horizontal path and sets its desired altitude to the local ground height plus a target clearance:
+$$z_{\text{ref}}(t) = h_{\text{ground}}\big(x_{\text{ref}}(t), y_{\text{ref}}(t)\big) + h_{\text{target}}$$
 
-\[
-z_{\mathrm{ref}}(t)=h_{\mathrm{ground}}\bigl(x_{\mathrm{ref}}(t),y_{\mathrm{ref}}(t)\bigr)+h_{\mathrm{target}}.
-\]
+where $h_{\text{target}} = 1.5\,\text{m}$. To prevent physically infeasible reference step-changes over vertical walls, $\dot{z}_{\text{ref}}$ is rate-limited.
 
-The code rate-limits changes to the altitude reference so that a sudden change in terrain height does not cause an instantaneous jump in the target. The drone's altitude above ground level is
+The vehicle's true clearance above ground level is:
 
-\[
-h_{\mathrm{AGL}}(t)=z(t)-h_{\mathrm{ground}}\bigl(x(t),y(t)\bigr).
-\]
+$$h_{\text{AGL}}(t) = z(t) - h_{\text{ground}}\big(x(t), y(t)\big)$$
 
-AGL is a clearance measure, not the same thing as world-frame altitude \(z\). A drone can have constant world altitude but changing AGL when the terrain rises or falls beneath it.
+Safe terrain navigation requires:
 
-Terrain presets in `terrain.py` include `flat`, `gentle`, `rolling`, `rugged`, `mountain`, `terraced`, `canyon`, and `obstacles`. The 36 saved comparison images use four of these presets: canyon, flat, mountain and rolling.
+$$h_{\text{AGL}}(t) > 0, \quad \forall t \ge 0$$
 
-### Payload and wind disturbances
+### Payload and wind disturbance models
 
-A payload fraction of `0.20` adds 20% of the nominal drone mass. The environment changes the drone body's mass but leaves its inertia unchanged; this is the specific simplified disturbance model implemented here.
+Disturbances are systematically injected to benchmark robustness:
+- **Payload Disturbance:** Total mass scales by factor $(1 + \delta_m)$ where $\delta_m \in \{0.0, 0.20, 0.40\}$ ($+0\%$, $+20\%$, $+40\%$ cargo load), introduced at $t = 3\,\text{s}$:
+  $$m_{\text{dist}} = m \times (1 + \delta_m)$$
+- **Wind Gust Disturbance:** Horizontal force $F_{\text{wind}} \in \{0.0\,\text{N}, 0.015\,\text{N}, 0.03\,\text{N}\}$ applied during the gust window $t \in [3\,\text{s}, 5\,\text{s}]$:
+  $$F_w = \begin{bmatrix} F_{\text{wind}} \cos(\theta_w) \\ F_{\text{wind}} \sin(\theta_w) \\ 0 \end{bmatrix}$$
 
-For `run_koopman_mujoco.py`, `--wind` is a horizontal force in newtons, and `--wind-dir` gives its direction in degrees: \(0^\circ\) points along \(+x\), and \(90^\circ\) points along \(+y\). The runner applies the configured force from \(t=3\) s until \(t=6\) s. By contrast, `run_sim.py` applies its wind force along \(+x\) from \(t=3\) s until \(t=5\) s and has no `--wind-dir` option. Use the right runner when interpreting or recreating a particular experiment.
-
-The dashboard has its own wind model and interactive controls; its wind settings should not be assumed identical to the constant-force disturbance in the two command-line runners.
+---
 
 ## The three controllers
 
-### PID controller
+### 1. Cascaded PID controller
 
-The PID baseline uses a cascaded architecture. An outer position loop computes a desired acceleration from position error, velocity error and an accumulated integral term. That acceleration is converted into a desired thrust vector and attitude. An inner attitude/rate loop computes desired torques, and the mixer converts total thrust and torques into four motor thrusts and then RPM commands.
+The PID baseline computes desired virtual accelerations from tracking errors:
 
-A typical one-axis PID relation is
+$$e_p(t) = p_{\text{ref}}(t) - p(t), \qquad e_v(t) = v_{\text{ref}}(t) - v(t)$$
 
-\[
-a_{\mathrm{cmd}}=K_p e_p+K_d e_v+K_i\int e_p\,dt,
-\]
+$$a_{\text{cmd}}(t) = K_p \, e_p(t) + K_d \, e_v(t) + K_i \int_0^t e_p(\tau) \, d\tau$$
 
-where \(e_p=p_{\mathrm{ref}}-p\) and \(e_v=v_{\mathrm{ref}}-v\). The code filters the reference-velocity estimate and clips the integrator and horizontal acceleration to avoid unbounded commands.
+The desired acceleration vector $a_{\text{cmd}}$ is converted into total thrust and desired roll/pitch angles $(\phi_{\text{des}}, \theta_{\text{des}})$. Inner attitude and rate loops generate three-axis control moments $(M_x, M_y, M_z)$, which are distributed to rotor RPMs via the standard quadrotor mixer matrix.
 
-### LQR controller
+### 2. Cascaded LQR controller
 
-The LQR baseline uses a simplified discrete double-integrator model for each axis. For the state \(q_k=[e_k,\dot e_k]^\mathsf{T}\), the code uses
+The LQR design models translational error dynamics as decoupled discrete double integrators:
 
-\[
-q_{k+1}=Aq_k+Ba_k,\qquad
-A=\begin{bmatrix}1&\Delta t\\0&1\end{bmatrix},\quad
-B=\begin{bmatrix}\tfrac{1}{2}\Delta t^2\\\Delta t\end{bmatrix}.
-\]
+$$q_{k+1} = A_{\text{lqr}} q_k + B_{\text{lqr}} a_k, \qquad q_k = \begin{bmatrix} e_k \\ \dot{e}_k \end{bmatrix} \in \mathbb{R}^2$$
 
-The gain \(K\) is obtained from the discrete algebraic Riccati equation for a quadratic state/input cost. Feedback is applied in the cascaded controller structure, with a small integral term enabled by default to help trim load-related offsets. Therefore, the implemented baseline is an LQR-based cascade with integral correction, not a claim that every part of the nonlinear drone is globally linear.
+$$A_{\text{lqr}} = \begin{bmatrix} 1 & \Delta t \\ 0 & 1 \end{bmatrix}, \qquad B_{\text{lqr}} = \begin{bmatrix} \frac{1}{2} \Delta t^2 \\ \Delta t \end{bmatrix}$$
 
-### Koopman-MPC controller
+The optimal state feedback gain $K_{\text{lqr}}$ minimizes the quadratic cost functional:
 
-#### Lifting the state
+$$J_{\text{lqr}} = \sum_{k=0}^{\infty} \left( q_k^\top Q_{\text{lqr}} q_k + a_k^\top R_{\text{lqr}} a_k \right)$$
 
-The Koopman approach maps the 18-dimensional state into 27 features. The implementation in `koopman_mpc.py` constructs
+Solving the Discrete Algebraic Riccati Equation (DARE):
 
-\[
-\psi(x)=
-\begin{bmatrix}
-x\\
-v_xR_{zz}\\
-v_yR_{zz}\\
-v_zR_{zz}\\
-v_zR_{xz}\\
-v_zR_{yz}\\
-\omega_xR_{zz}\\
-\omega_yR_{zz}\\
-\omega_zR_{zz}\\
-1
-\end{bmatrix}
-\in\mathbb{R}^{27}.
-\]
+$$P = Q_{\text{lqr}} + A_{\text{lqr}}^\top P A_{\text{lqr}} - A_{\text{lqr}}^\top P B_{\text{lqr}} (R_{\text{lqr}} + B_{\text{lqr}}^\top P B_{\text{lqr}})^{-1} B_{\text{lqr}}^\top P A_{\text{lqr}}$$
 
-The extra features encode selected interactions between velocity/angular velocity and orientation. The constant feature is a bias term. This feature map does not make the underlying physical system exactly linear; it gives regression a richer set of signals from which to approximate its transitions.
+$$K_{\text{lqr}} = (R_{\text{lqr}} + B_{\text{lqr}}^\top P B_{\text{lqr}})^{-1} B_{\text{lqr}}^\top P A_{\text{lqr}}$$
 
-#### Learning the linear predictor
+An auxiliary integrator trims steady-state altitude offsets under load.
 
-The training routine runs PID-controlled trajectories on flat terrain while varying reference motion, motor excitation, payload and wind. It collects pairs of consecutive lifted states and the associated normalized motor input. Episodes that crash or diverge are discarded. The fitted predictor is
+### 3. Koopman-MPC controller
 
-\[
-\psi(x_{k+1})\approx A\psi(x_k)+Bu_k,
-\]
+#### Nonlinear state lifting
 
-where \(A\in\mathbb{R}^{27\times27}\), \(B\in\mathbb{R}^{27\times4}\), and the training input is
+The $18$-dimensional physical state $x_k$ is mapped into a $27$-dimensional lifted observable vector:
 
-\[
-u_k=\frac{\mathrm{RPM}_k-\mathrm{RPM}_{\mathrm{hover}}}
-{\mathrm{RPM}_{\mathrm{hover}}}.
-\]
+$$\psi(x) = \begin{bmatrix} x \\ v_x R_{zz} \\ v_y R_{zz} \\ v_z R_{zz} \\ v_z R_{xz} \\ v_z R_{yz} \\ \omega_x R_{zz} \\ \omega_y R_{zz} \\ \omega_z R_{zz} \\ 1 \end{bmatrix} \in \mathbb{R}^{27}$$
 
-The matrices are estimated with a ridge-regularized least-squares fit. In generic notation, if each row of \(Z\) contains the current lifted state and normalized input, and each row of \(Y\) contains the next lifted state, the fit solves a regularized regression problem of the form
+The non-linear bilinear products couple translational velocity and body rates with the vertical projection element of the rotation matrix $R_{zz} = \cos(\theta)\cos(\phi)$, linearizing attitude-thrust interactions.
 
-\[
-\Theta^\star=\arg\min_\Theta
-\left\|Y-Z\Theta\right\|_F^2+\lambda\|\Theta\|_F^2.
-\]
+#### EDMD predictor estimation
 
-The resulting matrices are stored in `data/koopman_model.npz` and `koopman_mujoco_model.npz` and loaded automatically when the controller starts. If you wish to retrain the local model from scratch, run `python koopman_mpc.py` from this directory to collect new simulated transitions and re-fit the matrices.
+Data transitions $\{(\psi(x_k), u_k, \psi(x_{k+1}))\}_{k=1}^M$ are collected across diverse flight envelopes. Normalized inputs are defined as:
 
-#### Receding-horizon MPC
+$$u_k = \frac{\mathrm{RPM}_k - \mathrm{RPM}_{\text{hover}}}{\mathrm{RPM}_{\text{hover}}} \in \mathbb{R}^4$$
 
-At each update, the controller starts from the current lifted state and predicts a sequence of future lifted states. It minimizes a quadratic cost that penalizes position error, linear velocity, selected tilt-related rotation entries, angular velocity and changes in motor commands. In the implementation, the state-cost matrix \(Q\) is diagonal, with nonzero weights on the position entries \(0{:}3\), velocity entries \(3{:}6\), selected rotation entries \(8,11,12,13\), and angular velocity entries \(15{:}18\).
+Ridge-regularized least-squares regression estimates $(A, B)$:
 
-The optimization uses a prediction horizon \(H_p=10\) and a control horizon \(H_c=5\). Beyond the control horizon, the input increments are held at the final optimized increment. The solver is CVXPY with CLARABEL. Only the first action from the optimized sequence is applied; then the next state is observed and the optimization repeats.
+$$\Theta^* = \arg\min_\Theta \left( \| Y - Z \Theta \|_F^2 + \lambda \|\Theta\|_F^2 \right)$$
 
-**Important code note on input scaling:** In `koopman_mpc.py`, the training data uses the normalized input \(u=(\mathrm{RPM}-\mathrm{RPM}_{\mathrm{hover}})/\mathrm{RPM}_{\mathrm{hover}}\), while the MPC prediction constraint inside the receding-horizon optimization passes `hover_rpm + du[t]` into the linear model. These operate on different scales. In practice, the controller also includes an altitude compensation calculation in `KoopmanMPC.rpm`: it updates a collective hover baseline using vertical position/velocity error and a bounded integral term. This helps the controller respond to mass and vertical disturbances, complementing the lifted model and MPC optimization.
+where $Z = [\Psi(X_0), \, U]$, $Y = \Psi(X_1)$, yielding:
+
+$$\psi(x_{k+1}) \approx A \psi(x_k) + B u_k, \qquad A \in \mathbb{R}^{27 \times 27}, \quad B \in \mathbb{R}^{27 \times 4}$$
+
+#### Receding-horizon quadratic program
+
+At each control step, the MPC solves:
+
+$$\min_{\{\Delta u_t\}_{t=0}^{H_p-1}} \sum_{t=0}^{H_p-1} \left( \|\psi_{t+1} - \psi_{\text{ref}, t+1}\|_Q^2 + \|\Delta u_t\|_{R_m}^2 + \|\Delta u_t - \Delta u_{t-1}\|_{E_m}^2 \right)$$
+
+$$\text{subject to:} \quad \psi_{t+1} = A \psi_t + B u_t$$
+
+$$u_t = u_{\text{hover}} + \Delta u_t$$
+
+$$-u_{\text{hover}} \le \Delta u_t \le \mathrm{RPM}_{\max} - u_{\text{hover}}$$
+
+$$\Delta u_t = \Delta u_{H_c-1}, \quad \forall t \ge H_c$$
+
+with prediction horizon $H_p = 10$, control horizon $H_c = 5$, solved via `CLARABEL`.
+
+#### Adaptive collective hover trim
+
+To reject payload mass uncertainty $\delta_m$, an adaptive baseline is integrated:
+
+$$a_{z, \text{cmd}} = g + K_{p, z} (z_{\text{ref}} - z) + K_{d, z} (\dot{z}_{\text{ref}} - \dot{z}) + K_{i, z} \int_0^t (z_{\text{ref}} - z) \, d\tau$$
+
+$$T_{\text{cmd}} = m \max(a_{z, \text{cmd}}, 2.0)$$
+
+$$\mathrm{RPM}_{\text{hover}} = \sqrt{\frac{T_{\text{cmd}}}{4 k_f}}$$
+
+---
 
 ## Installation
 
 ### Requirements
-
-Use Python 3.10 or 3.11 in a virtual environment. The core simulation and plotting workflow uses:
-
-- `numpy` — numerical arrays and linear algebra.
-- `mujoco` — rigid-body simulation, actuators, collision/contact calculation, and 3-D viewer.
-- `cvxpy` — expresses the MPC optimization problem.
-- `clarabel` — optimization solver used by the Koopman-MPC controller.
-- `scipy` — discrete algebraic Riccati equation used by the LQR baseline.
-- `pandas` — analysis of saved CSV logs, where applicable.
-- `matplotlib` — the four-panel controller comparison and summary plots.
+- Python $3.10$ or $3.11$
+- `numpy`, `mujoco`, `cvxpy`, `clarabel`, `scipy`, `pandas`, `matplotlib`
 
 ### Windows (PowerShell / Command Prompt)
-
-Run from the repository root:
 
 ```powershell
 cd mujoco
 py -3.10 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install numpy mujoco cvxpy clarabel scipy pandas matplotlib
-```
-
-If PowerShell blocks script execution, use Command Prompt:
-
-```cmd
-cd mujoco
-py -3.10 -m venv .venv
-.venv\Scripts\activate.bat
 python -m pip install --upgrade pip
 python -m pip install numpy mujoco cvxpy clarabel scipy pandas matplotlib
 ```
@@ -295,505 +256,373 @@ python -m pip install --upgrade pip
 python -m pip install numpy mujoco cvxpy clarabel scipy pandas matplotlib
 ```
 
-### Verify imports
-
+### Verification
 ```bash
-python -c "import numpy, mujoco, cvxpy, clarabel, scipy, pandas, matplotlib; print('All required imports succeeded')"
 python selftest.py
 ```
 
-The self-test checks model and motor setup.
+---
 
 ## Run the simulations
 
-**Run every command from the `mujoco/` directory** after activating the environment. The pre-trained model matrices are loaded automatically from `../data/koopman_model.npz` or local `koopman_mujoco_model.npz`.
-
-### 1. Live 3-D flight of Koopman-MPC over rolling terrain
-
+### 1. Live 3D flight of Koopman-MPC over rolling terrain
 ```bash
 python run_koopman_mujoco.py --gui --terrain rolling
 ```
 
-This opens the MuJoCo viewer and runs the Koopman-MPC controller on rolling terrain. The reference moves in the horizontal plane along a sinusoidal path. The reference altitude is based on the local terrain height plus the default 1.5 m target clearance. The viewer shows the drone and reference marker; the runner draws a red trail for the actual flight and a green trail for the reference. The terminal prints position, AGL, tilt, mean RPM and tracking error. The episode runs for 12 seconds by default and saves the log to `mujoco_run_koopman.npz`.
-
-### 2. Test disturbance rejection (+20% payload mass and 90-degree crosswind)
-
+### 2. Disturbance rejection (+20% payload, 90° crosswind)
 ```bash
 python run_koopman_mujoco.py --gui --terrain rolling --payload 0.20 --wind 0.015 --wind-dir 90
 ```
 
-This runs the same terrain-following task, but adds 20% to the drone's nominal body mass at \(t=3\) s and applies a horizontal force of \(0.015\) N along \(+y\) from \(t=3\) s to \(t=6\) s. The cyan line in the viewer indicates the wind-force direction during the gust. Watch whether the actual trajectory separates from the green reference trail at disturbance onset and whether it returns toward the reference after the gust ends.
-
-### 3. Test on steep mountain peaks
-
+### 3. Steep mountain peak tracking
 ```bash
 python run_koopman_mujoco.py --gui --terrain mountain
 ```
 
-This selects the mountain terrain preset. The reference altitude follows the local terrain height plus the desired clearance, with its climb/descent rate limited by the runner. Observe the drone as the reference crosses high and low terrain areas. The important checks are whether it follows the reference, maintains positive clearance, avoids terrain contact, and stays upright.
-
-### 4. Run the 3-controller benchmark (PID vs LQR vs Koopman-MPC, generates `comparison.png`)
-
+### 4. Three-controller benchmark (generates `comparison.png`)
 ```bash
 python run_sim.py --ctrl all --gui --terrain rolling
 ```
 
-The script runs PID, LQR and Koopman-MPC sequentially on the same rolling-terrain setup. With `--gui`, a viewer is opened for each controller run; close a viewer when that run is finished so the next controller can be tested. At the end, the terminal prints each controller's status, position-error RMSE, maximum position error and minimum AGL. The script saves `comparison.png` in the current directory.
-
-The figure has four panels:
-
-1. **Top-down path:** horizontal \(x\)-\(y\) reference and each controller's actual path. Curves closer to the reference indicate better horizontal tracking.
-2. **Altitude follows the terrain:** actual \(z\), reference \(z\), and ground height under the drone over time. This panel shows how world altitude changes as the terrain changes.
-3. **3-D tracking error:** Euclidean distance between actual and reference positions at each time step.
-4. **Height above ground (AGL):** actual clearance over the terrain directly below the drone. Lower values mean the drone is closer to the surface.
-
-### 5. Launch interactive flight dashboard with real-time sliders
-
+### 5. Interactive flight dashboard
 ```bash
 python drone_sim.py --terrain rolling
 ```
 
-This opens the interactive dashboard. It is intended for hands-on exploration of the drone, terrain and disturbance settings using the controls provided by the application. Select or adjust the available controls, start the flight, and observe the resulting state and trajectory.
+---
 
-### Other useful options
+## Quantitative benchmark metrics
 
-`run_koopman_mujoco.py` supports `--terrain`, `--agl`, `--amp`, `--T`, `--seed`, `--payload`, `--wind`, and `--wind-dir`. For example:
+Tracking performance is evaluated using three rigorous statistical metrics:
 
-```bash
-python run_koopman_mujoco.py --gui --terrain canyon --agl 1.2 --T 12
-python run_koopman_mujoco.py --gui --terrain terraced --agl 1.2
-python run_koopman_mujoco.py --gui --terrain flat
-```
+1. **Instantaneous 3D Tracking Error:**
+   $$e_k = \| p_k - p_k^{\text{ref}} \|_2 = \sqrt{(x_k - x_k^{\text{ref}})^2 + (y_k - y_k^{\text{ref}})^2 + (z_k - z_k^{\text{ref}})^2}$$
 
-The recognized terrain names are `flat`, `gentle`, `rolling`, `rugged`, `mountain`, `terraced`, `canyon`, and `obstacles`.
+2. **Root Mean Square Error (RMSE):**
+   $$\mathrm{RMSE} = \sqrt{\frac{1}{N} \sum_{k=1}^N e_k^2}$$
 
-To run the controller benchmark without opening the viewer, omit `--gui`:
+3. **Maximum Tracking Deviation:**
+   $$e_{\max} = \max_{1 \le k \le N} e_k$$
 
-```bash
-python run_sim.py --ctrl all --terrain rolling
-```
+4. **Minimum Terrain Clearance:**
+   $$\mathrm{AGL}_{\min} = \min_{1 \le k \le N} h_{\text{AGL}, k}$$
 
-To optionally retrain the model before the benchmark:
-
-```bash
-python run_sim.py --ctrl all --retrain --terrain rolling
-```
-
-## How the benchmark metrics are calculated
-
-Let the actual position be \(p_k\) and the reference position be \(p_k^{\mathrm{ref}}\). The instantaneous 3-D tracking error is
-
-\[
-e_k=\left\|p_k-p_k^{\mathrm{ref}}\right\|_2
-=\sqrt{(x_k-x_k^{\mathrm{ref}})^2+(y_k-y_k^{\mathrm{ref}})^2+(z_k-z_k^{\mathrm{ref}})^2}.
-\]
-
-The position-error RMSE over \(N\) logged samples is
-
-\[
-\mathrm{RMSE}=\sqrt{\frac{1}{N}\sum_{k=1}^{N}e_k^2}.
-\]
-
-RMSE measures typical error over the full run; the maximum error shows the largest observed deviation. Minimum AGL is
-
-\[
-\min_k h_{\mathrm{AGL},k},
-\]
-
-the smallest logged distance between the drone's reference point and the terrain height directly below it. Interpret all three together: a low RMSE does not rule out a brief large error, and minimum AGL says nothing about horizontal tracking by itself.
+---
 
 ## The 36 saved comparison figures
 
-### How each figure was generated
-
-`analysis/run_batch_comparisons.py` runs `run_sim.py --ctrl all --gui` for every combination of four terrain presets, three payload values and three wind values. It moves each generated `comparison.png` into `analysis/comparisons/` and gives it a filename that encodes the configuration.
-
-The 36 figures form a \(4\times3\times3\) grid:
-
-- **Terrain:** canyon, flat, mountain, rolling.
-- **Payload fraction:** `0.0` (nominal mass), `0.2` (+20% mass), `0.4` (+40% mass).
-- **Wind force:** `0.0`, `0.015`, `0.03` N. In the `run_sim.py` batch workflow, the wind is applied along \(+x\) between \(t=3\) s and \(t=5\) s.
-
-The panels show horizontal path tracking, altitude relative to the changing terrain, 3-D tracking error and AGL. Note: `comparison_mountain_payload0.0_wind0.0.png` contains PID and LQR traces for that specific run.
-
-- On **flat** terrain, ground height is constant, so altitude and AGL are closely aligned.
-- On **rolling** terrain, the reference altitude smoothly follows hills and valleys.
-- On **mountain** terrain, steeper slope changes test vertical authority and clearance limits.
-- In a **canyon**, sudden transitions near elevated corridor walls test tracking precision.
-- Increasing **payload** tests vertical tracking and baseline thrust trim.
-- Increasing **wind** evaluates lateral disturbance rejection during the active gust window.
+Batch evaluation across $4\text{ terrains} \times 3\text{ payloads} \times 3\text{ winds}$ produces a complete $36$-scenario benchmark matrix:
+- **Terrains:** `canyon`, `flat`, `mountain`, `rolling`
+- **Payload fractions:** $\delta_m \in \{0.0, 0.20, 0.40\}$ ($+0\%$, $+20\%$, $+40\%$ mass)
+- **Wind forces:** $F_w \in \{0.0\,\text{N}, 0.015\,\text{N}, 0.03\,\text{N}\}$ applied for $t \in [3\,\text{s}, 5\,\text{s}]$
 
 ### Canyon terrain
 
 <details>
-<summary><strong>comparison_canyon_payload0.0_wind0.0.png</strong> — Nominal mass baseline; wind 0.0 N</summary>
+<summary><strong>comparison_canyon_payload0.0_wind0.0.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.0_wind0.0.png](analysis/comparisons/comparison_canyon_payload0.0_wind0.0.png)
 
-**What is happening in this experiment:** The drone tracks a path above the canyon height field. The reference altitude follows the ground-height profile, so the altitude panel shows how the target changes near the corridor and raised sides.
-
-**Payload condition:** No added payload is applied (nominal-mass baseline).
-
-**Wind condition:** No wind force is injected in this run.
-
-**How to interpret the panels:**
-1. **Top-down path:** compare the reference line with PID, LQR and Koopman-MPC paths.
-2. **Altitude:** compare actual world-frame height with the reference altitude and the ground-height trace.
-3. **3-D tracking error:** identify the time and size of error peaks.
-4. **AGL:** inspect the lowest point of each trace to assess clearance.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.034 m, LQR = 0.092 m, Koopman-MPC = 0.201 m.
-
+**Conditions:** $\delta_m = 0.0$, $F_w = 0.0\,\text{N}$.
+**Results:** $\text{RMSE}_{\text{PID}} = 0.034\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.092\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.201\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_canyon_payload0.0_wind0.015.png</strong> — Nominal mass baseline; wind 0.015 N</summary>
+<summary><strong>comparison_canyon_payload0.0_wind0.015.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.0_wind0.015.png](analysis/comparisons/comparison_canyon_payload0.0_wind0.015.png)
 
-**What is happening in this experiment:** Canyon tracking with nominal mass under a 0.015 N horizontal wind gust applied from \(t = 3\) s to \(t = 5\) s.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.047 m, LQR = 0.130 m, Koopman-MPC = 0.348 m.
-
+**Conditions:** $\delta_m = 0.0$, $F_w = 0.015\,\text{N}$ ($t \in [3\,\text{s}, 5\,\text{s}]$).
+**Results:** $\text{RMSE}_{\text{PID}} = 0.047\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.130\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.348\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_canyon_payload0.0_wind0.03.png</strong> — Nominal mass baseline; wind 0.03 N</summary>
+<summary><strong>comparison_canyon_payload0.0_wind0.03.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.0_wind0.03.png](analysis/comparisons/comparison_canyon_payload0.0_wind0.03.png)
 
-**What is happening in this experiment:** Canyon tracking under strong 0.03 N crosswind gust during \(t = 3\) to \(5\) s.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.065 m, LQR = 0.187 m, Koopman-MPC = 0.548 m.
-
+**Conditions:** $\delta_m = 0.0$, $F_w = 0.03\,\text{N}$.
+**Results:** $\text{RMSE}_{\text{PID}} = 0.065\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.187\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.548\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_canyon_payload0.2_wind0.0.png</strong> — +20% payload mass; wind 0.0 N</summary>
+<summary><strong>comparison_canyon_payload0.2_wind0.0.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.2_wind0.0.png](analysis/comparisons/comparison_canyon_payload0.2_wind0.0.png)
 
-**What is happening in this experiment:** Canyon tracking with 20% mass increase injected at \(t = 3\) s.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.067 m, LQR = 0.166 m, Koopman-MPC = 0.213 m.
-
+**Conditions:** $\delta_m = 0.20$ at $t = 3\,\text{s}$, $F_w = 0.0\,\text{N}$.
+**Results:** $\text{RMSE}_{\text{PID}} = 0.067\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.166\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.213\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_canyon_payload0.2_wind0.015.png</strong> — +20% payload mass; wind 0.015 N</summary>
+<summary><strong>comparison_canyon_payload0.2_wind0.015.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.2_wind0.015.png](analysis/comparisons/comparison_canyon_payload0.2_wind0.015.png)
 
-**What is happening in this experiment:** Canyon tracking with simultaneous 20% payload and 0.015 N wind gust.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.075 m, LQR = 0.192 m, Koopman-MPC = 0.329 m.
-
+**Conditions:** $\delta_m = 0.20$, $F_w = 0.015\,\text{N}$.
+**Results:** $\text{RMSE}_{\text{PID}} = 0.075\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.192\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.329\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_canyon_payload0.2_wind0.03.png</strong> — +20% payload mass; wind 0.03 N</summary>
+<summary><strong>comparison_canyon_payload0.2_wind0.03.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.2_wind0.03.png](analysis/comparisons/comparison_canyon_payload0.2_wind0.03.png)
 
-**What is happening in this experiment:** Canyon tracking with +20% mass and maximum 0.03 N wind gust.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.088 m, LQR = 0.237 m, Koopman-MPC = 0.486 m.
-
+**Conditions:** $\delta_m = 0.20$, $F_w = 0.03\,\text{N}$.
+**Results:** $\text{RMSE}_{\text{PID}} = 0.088\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.237\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.486\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_canyon_payload0.4_wind0.0.png</strong> — +40% payload mass; wind 0.0 N</summary>
+<summary><strong>comparison_canyon_payload0.4_wind0.0.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.4_wind0.0.png](analysis/comparisons/comparison_canyon_payload0.4_wind0.0.png)
 
-**What is happening in this experiment:** Heavy +40% cargo load injected at \(t = 3\) s in canyon corridor.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.121 m, LQR = 0.292 m, Koopman-MPC = 0.254 m.
-
+**Conditions:** $\delta_m = 0.40$, $F_w = 0.0\,\text{N}$.
+**Results:** $\text{RMSE}_{\text{PID}} = 0.121\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.292\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.254\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_canyon_payload0.4_wind0.015.png</strong> — +40% payload mass; wind 0.015 N</summary>
+<summary><strong>comparison_canyon_payload0.4_wind0.015.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.4_wind0.015.png](analysis/comparisons/comparison_canyon_payload0.4_wind0.015.png)
 
-**What is happening in this experiment:** +40% payload disturbance combined with 0.015 N crosswind.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.126 m, LQR = 0.309 m, Koopman-MPC = 0.340 m.
-
+**Conditions:** $\delta_m = 0.40$, $F_w = 0.015\,\text{N}$.
+**Results:** $\text{RMSE}_{\text{PID}} = 0.126\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.309\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.340\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_canyon_payload0.4_wind0.03.png</strong> — +40% payload mass; wind 0.03 N</summary>
+<summary><strong>comparison_canyon_payload0.4_wind0.03.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_canyon_payload0.4_wind0.03.png](analysis/comparisons/comparison_canyon_payload0.4_wind0.03.png)
 
-**What is happening in this experiment:** Maximum disturbance scenario in canyon: +40% mass and 0.03 N wind gust.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.134 m, LQR = 0.341 m, Koopman-MPC = 0.462 m.
-
+**Conditions:** $\delta_m = 0.40$, $F_w = 0.03\,\text{N}$.
+**Results:** $\text{RMSE}_{\text{PID}} = 0.134\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.341\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.462\,\text{m}$.
 </details>
 
 ### Flat terrain
 
 <details>
-<summary><strong>comparison_flat_payload0.0_wind0.0.png</strong> — Nominal mass baseline; wind 0.0 N</summary>
+<summary><strong>comparison_flat_payload0.0_wind0.0.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_flat_payload0.0_wind0.0.png](analysis/comparisons/comparison_flat_payload0.0_wind0.0.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.034 m, LQR = 0.092 m, Koopman-MPC = 0.202 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.034\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.092\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.202\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_flat_payload0.0_wind0.015.png</strong> — Nominal mass baseline; wind 0.015 N</summary>
+<summary><strong>comparison_flat_payload0.0_wind0.015.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_flat_payload0.0_wind0.015.png](analysis/comparisons/comparison_flat_payload0.0_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.047 m, LQR = 0.130 m, Koopman-MPC = 0.350 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.047\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.130\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.350\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_flat_payload0.0_wind0.03.png</strong> — Nominal mass baseline; wind 0.03 N</summary>
+<summary><strong>comparison_flat_payload0.0_wind0.03.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_flat_payload0.0_wind0.03.png](analysis/comparisons/comparison_flat_payload0.0_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.065 m, LQR = 0.187 m, Koopman-MPC = 0.548 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.065\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.187\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.548\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_flat_payload0.2_wind0.0.png</strong> — +20% payload mass; wind 0.0 N</summary>
+<summary><strong>comparison_flat_payload0.2_wind0.0.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_flat_payload0.2_wind0.0.png](analysis/comparisons/comparison_flat_payload0.2_wind0.0.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.068 m, LQR = 0.166 m, Koopman-MPC = 0.214 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.068\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.166\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.214\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_flat_payload0.2_wind0.015.png</strong> — +20% payload mass; wind 0.015 N</summary>
+<summary><strong>comparison_flat_payload0.2_wind0.015.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_flat_payload0.2_wind0.015.png](analysis/comparisons/comparison_flat_payload0.2_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.075 m, LQR = 0.193 m, Koopman-MPC = 0.330 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.075\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.193\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.330\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_flat_payload0.2_wind0.03.png</strong> — +20% payload mass; wind 0.03 N</summary>
+<summary><strong>comparison_flat_payload0.2_wind0.03.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_flat_payload0.2_wind0.03.png](analysis/comparisons/comparison_flat_payload0.2_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.088 m, LQR = 0.238 m, Koopman-MPC = 0.487 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.088\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.238\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.487\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_flat_payload0.4_wind0.0.png</strong> — +40% payload mass; wind 0.0 N</summary>
+<summary><strong>comparison_flat_payload0.4_wind0.0.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_flat_payload0.4_wind0.0.png](analysis/comparisons/comparison_flat_payload0.4_wind0.0.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.121 m, LQR = 0.293 m, Koopman-MPC = 0.255 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.121\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.293\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.255\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_flat_payload0.4_wind0.015.png</strong> — +40% payload mass; wind 0.015 N</summary>
+<summary><strong>comparison_flat_payload0.4_wind0.015.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_flat_payload0.4_wind0.015.png](analysis/comparisons/comparison_flat_payload0.4_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.126 m, LQR = 0.310 m, Koopman-MPC = 0.341 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.126\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.310\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.341\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_flat_payload0.4_wind0.03.png</strong> — +40% payload mass; wind 0.03 N</summary>
+<summary><strong>comparison_flat_payload0.4_wind0.03.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_flat_payload0.4_wind0.03.png](analysis/comparisons/comparison_flat_payload0.4_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.135 m, LQR = 0.342 m, Koopman-MPC = 0.463 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.135\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.342\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.463\,\text{m}$.
 </details>
 
 ### Mountain terrain
 
 <details>
-<summary><strong>comparison_mountain_payload0.0_wind0.0.png</strong> — Nominal mass baseline; wind 0.0 N</summary>
+<summary><strong>comparison_mountain_payload0.0_wind0.0.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.0_wind0.0.png](analysis/comparisons/comparison_mountain_payload0.0_wind0.0.png)
 
-**What is happening in this experiment:** Steep peak tracking. Note: this particular logged figure shows PID and LQR baseline traces.
-
-**Result from the saved figure title (3-D position RMSE):** PID = 0.039 m, LQR = 0.121 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.039\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.121\,\text{m}$ (PID and LQR trace).
 </details>
 
 <details>
-<summary><strong>comparison_mountain_payload0.0_wind0.015.png</strong> — Nominal mass baseline; wind 0.015 N</summary>
+<summary><strong>comparison_mountain_payload0.0_wind0.015.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.0_wind0.015.png](analysis/comparisons/comparison_mountain_payload0.0_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.050 m, LQR = 0.136 m, Koopman-MPC = 0.350 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.050\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.136\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.350\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_mountain_payload0.0_wind0.03.png</strong> — Nominal mass baseline; wind 0.03 N</summary>
+<summary><strong>comparison_mountain_payload0.0_wind0.03.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.0_wind0.03.png](analysis/comparisons/comparison_mountain_payload0.0_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.067 m, LQR = 0.191 m, Koopman-MPC = 0.555 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.067\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.191\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.555\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_mountain_payload0.2_wind0.0.png</strong> — +20% payload mass; wind 0.0 N</summary>
+<summary><strong>comparison_mountain_payload0.2_wind0.0.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.2_wind0.0.png](analysis/comparisons/comparison_mountain_payload0.2_wind0.0.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.074 m, LQR = 0.176 m, Koopman-MPC = 0.213 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.074\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.176\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.213\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_mountain_payload0.2_wind0.015.png</strong> — +20% payload mass; wind 0.015 N</summary>
+<summary><strong>comparison_mountain_payload0.2_wind0.015.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.2_wind0.015.png](analysis/comparisons/comparison_mountain_payload0.2_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.081 m, LQR = 0.201 m, Koopman-MPC = 0.330 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.081\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.201\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.330\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_mountain_payload0.2_wind0.03.png</strong> — +20% payload mass; wind 0.03 N</summary>
+<summary><strong>comparison_mountain_payload0.2_wind0.03.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.2_wind0.03.png](analysis/comparisons/comparison_mountain_payload0.2_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.093 m, LQR = 0.245 m, Koopman-MPC = 0.492 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.093\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.245\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.492\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_mountain_payload0.4_wind0.0.png</strong> — +40% payload mass; wind 0.0 N</summary>
+<summary><strong>comparison_mountain_payload0.4_wind0.0.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.4_wind0.0.png](analysis/comparisons/comparison_mountain_payload0.4_wind0.0.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.127 m, LQR = 0.302 m, Koopman-MPC = 0.256 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.127\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.302\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.256\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_mountain_payload0.4_wind0.015.png</strong> — +40% payload mass; wind 0.015 N</summary>
+<summary><strong>comparison_mountain_payload0.4_wind0.015.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.4_wind0.015.png](analysis/comparisons/comparison_mountain_payload0.4_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.132 m, LQR = 0.318 m, Koopman-MPC = 0.343 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.132\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.318\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.343\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_mountain_payload0.4_wind0.03.png</strong> — +40% payload mass; wind 0.03 N</summary>
+<summary><strong>comparison_mountain_payload0.4_wind0.03.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_mountain_payload0.4_wind0.03.png](analysis/comparisons/comparison_mountain_payload0.4_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.140 m, LQR = 0.350 m, Koopman-MPC = 0.468 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.140\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.350\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.468\,\text{m}$.
 </details>
 
 ### Rolling terrain
 
 <details>
-<summary><strong>comparison_rolling_payload0.0_wind0.0.png</strong> — Nominal mass baseline; wind 0.0 N</summary>
+<summary><strong>comparison_rolling_payload0.0_wind0.0.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.0_wind0.0.png](analysis/comparisons/comparison_rolling_payload0.0_wind0.0.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.034 m, LQR = 0.092 m, Koopman-MPC = 0.200 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.034\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.092\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.200\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_rolling_payload0.0_wind0.015.png</strong> — Nominal mass baseline; wind 0.015 N</summary>
+<summary><strong>comparison_rolling_payload0.0_wind0.015.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.0_wind0.015.png](analysis/comparisons/comparison_rolling_payload0.0_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.047 m, LQR = 0.131 m, Koopman-MPC = 0.350 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.047\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.131\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.350\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_rolling_payload0.0_wind0.03.png</strong> — Nominal mass baseline; wind 0.03 N</summary>
+<summary><strong>comparison_rolling_payload0.0_wind0.03.png</strong> — Nominal mass ($\delta_m = 0.0$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.0_wind0.03.png](analysis/comparisons/comparison_rolling_payload0.0_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.065 m, LQR = 0.187 m, Koopman-MPC = 0.552 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.065\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.187\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.552\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_rolling_payload0.2_wind0.0.png</strong> — +20% payload mass; wind 0.0 N</summary>
+<summary><strong>comparison_rolling_payload0.2_wind0.0.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.2_wind0.0.png](analysis/comparisons/comparison_rolling_payload0.2_wind0.0.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.068 m, LQR = 0.166 m, Koopman-MPC = 0.213 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.068\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.166\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.213\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_rolling_payload0.2_wind0.015.png</strong> — +20% payload mass; wind 0.015 N</summary>
+<summary><strong>comparison_rolling_payload0.2_wind0.015.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.2_wind0.015.png](analysis/comparisons/comparison_rolling_payload0.2_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.075 m, LQR = 0.192 m, Koopman-MPC = 0.330 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.075\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.192\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.330\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_rolling_payload0.2_wind0.03.png</strong> — +20% payload mass; wind 0.03 N</summary>
+<summary><strong>comparison_rolling_payload0.2_wind0.03.png</strong> — $+20\%$ mass ($\delta_m = 0.20$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.2_wind0.03.png](analysis/comparisons/comparison_rolling_payload0.2_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.088 m, LQR = 0.237 m, Koopman-MPC = 0.490 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.088\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.237\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.490\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_rolling_payload0.4_wind0.0.png</strong> — +40% payload mass; wind 0.0 N</summary>
+<summary><strong>comparison_rolling_payload0.4_wind0.0.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.0\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.4_wind0.0.png](analysis/comparisons/comparison_rolling_payload0.4_wind0.0.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.121 m, LQR = 0.291 m, Koopman-MPC = 0.254 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.121\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.291\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.254\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_rolling_payload0.4_wind0.015.png</strong> — +40% payload mass; wind 0.015 N</summary>
+<summary><strong>comparison_rolling_payload0.4_wind0.015.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.015\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.4_wind0.015.png](analysis/comparisons/comparison_rolling_payload0.4_wind0.015.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.126 m, LQR = 0.309 m, Koopman-MPC = 0.341 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.126\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.309\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.341\,\text{m}$.
 </details>
 
 <details>
-<summary><strong>comparison_rolling_payload0.4_wind0.03.png</strong> — +40% payload mass; wind 0.03 N</summary>
+<summary><strong>comparison_rolling_payload0.4_wind0.03.png</strong> — $+40\%$ mass ($\delta_m = 0.40$), $F_w = 0.03\,\text{N}$</summary>
 
 ![comparison_rolling_payload0.4_wind0.03.png](analysis/comparisons/comparison_rolling_payload0.4_wind0.03.png)
 
-**Result from the saved figure title (3-D position RMSE):** PID = 0.135 m, LQR = 0.341 m, Koopman-MPC = 0.465 m.
-
+**Results:** $\text{RMSE}_{\text{PID}} = 0.135\,\text{m}$, $\text{RMSE}_{\text{LQR}} = 0.341\,\text{m}$, $\text{RMSE}_{\text{Koopman-MPC}} = 0.465\,\text{m}$.
 </details>
 
-## Generating the 36 figures again
-
-From the `mujoco/` directory:
-
-```bash
-python analysis/run_batch_comparisons.py --terrains rolling flat mountain canyon --payloads 0.0 0.2 0.4 --winds 0.0 0.015 0.03
-```
-
-This launches the batch comparison runner across every parameter combination and writes the resulting figures to `analysis/comparisons/`.
+---
 
 ## References
 
