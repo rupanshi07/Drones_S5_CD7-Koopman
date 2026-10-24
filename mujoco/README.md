@@ -4,7 +4,7 @@
 
 # Koopman-MPC Quadrotor Simulation in MuJoCo
 
-> **How to read this README:** Start with the project overview and simulation workflow, then use the file guide and controller explanations to understand how the code fits together. The comparison gallery later in this document contains the saved experiments; each figure is labeled by terrain, payload fraction, and wind magnitude.
+
 
 ## What this project does
 
