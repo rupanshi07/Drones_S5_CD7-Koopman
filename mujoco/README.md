@@ -29,21 +29,24 @@ The benchmark suite evaluates performance against two classical control architec
 ### Simulation loop at a glance
 
 
-```mermaid
-flowchart TD
-    A["Terrain heightfield + XML drone model"]
-    B["$$\text{MuJoCo state: } p_k \in \mathbb{R}^3,\ v_k \in \mathbb{R}^3,\ R_k \in SO(3),\ \omega_k \in \mathbb{R}^3 \ (x_k \in \mathbb{R}^{18})$$"]
-    C["$$\text{Reference: } p_{\mathrm{ref}}(t) = [x_{\mathrm{ref}}(t),\ y_{\mathrm{ref}}(t),\ h_{\mathrm{ground}}(x,y) + h_{\mathrm{target}}]^\top$$"]
-    D["Controller: PID, LQR, or Koopman-MPC"]
-    E["$$\text{Motor actuation: } \mathrm{RPM}_i \in [0,\ \mathrm{RPM}_{\max}],\ i = 1,\dots,4$$"]
-    F["$$\text{MuJoCo physics step: } \Delta t_{\mathrm{physics}} = \tfrac{1}{240}\,\mathrm{s}\ \text{(5 substeps per control interval)}$$"]
-    G["$$\text{Record: } p_k,\ e_k,\ h_{\mathrm{AGL}}(t),\ \mathrm{RPM}_i$$"]
-    H["$$\text{Repeat until episode duration } T \text{ is reached}$$"]
-
-    A --> B --> C --> D --> E --> F
-    F --> G
-    F --> H
-    H -. next step .-> B
+```math
+\begin{array}{c}
+\boxed{\text{Terrain heightfield + XML drone model}} \\[4pt]
+\downarrow \\[4pt]
+\boxed{p_k \in \mathbb{R}^3,\; v_k \in \mathbb{R}^3,\; R_k \in SO(3),\; \omega_k \in \mathbb{R}^3 \quad (x_k \in \mathbb{R}^{18})} \\[4pt]
+\downarrow \\[4pt]
+\boxed{p_{\mathrm{ref}}(t) = \left[x_{\mathrm{ref}}(t),\; y_{\mathrm{ref}}(t),\; h_{\mathrm{ground}}(x,y) + h_{\mathrm{target}}\right]^\top} \\[4pt]
+\downarrow \\[4pt]
+\boxed{\text{Controller: PID, LQR, or Koopman-MPC}} \\[4pt]
+\downarrow \\[4pt]
+\boxed{\mathrm{RPM}_i \in [0,\ \mathrm{RPM}_{\max}], \quad i = 1,\dots,4} \\[4pt]
+\downarrow \\[4pt]
+\boxed{\Delta t_{\mathrm{physics}} = \tfrac{1}{240}\,\mathrm{s} \quad (5 \text{ substeps per control interval})} \\[4pt]
+\downarrow \\[4pt]
+\boxed{\text{Record: } p_k,\; e_k,\; h_{\mathrm{AGL}}(t),\; \mathrm{RPM}_i} \\[4pt]
+\downarrow \\[4pt]
+\boxed{\text{Repeat until episode duration } T \text{ is reached}}
+\end{array}
 ```
 
 
