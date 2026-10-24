@@ -1,4 +1,4 @@
-﻿venv/
+venv/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
@@ -10,3 +10,4 @@ results/plots/
 drones-env/
 gym-pybullet-drones/
 repo_update_package/
+artifacts/
