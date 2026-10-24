@@ -265,28 +265,39 @@ python selftest.py
 
 ## Run the simulations
 
+To run any simulation, open your terminal, navigate to the `mujoco/` directory, and activate your virtual environment:
+
+```cmd
+cd /d D:\Drones_S5_CD7-Koopman\mujoco
+```
+
 ### 1. Live 3D flight of Koopman-MPC over rolling terrain
-```bash
+Launches the real-time $3\mathrm{D}$ MuJoCo passive viewer with a dynamic camera tracking the Crazyflie as it follows an elliptical sinusoidal reference trajectory over undulating terrain:
+```cmd
 python run_koopman_mujoco.py --gui --terrain rolling
 ```
 
-### 2. Disturbance rejection (+20% payload, 90° crosswind)
-```bash
+### 2. Test disturbance rejection ($+20\%$ payload mass, $90^\circ$ crosswind)
+Evaluates robustness by injecting a $+20\%$ mass increase ($\delta_m = 0.20$) at $t = 3\,\text{s}$ and applying a sustained horizontal crosswind force $F_{\text{wind}} = 0.015\,\text{N}$ along $+\hat{y}$ ($\theta_w = 90^\circ$) from $t = 3\,\text{s}$ to $t = 6\,\text{s}$:
+```cmd
 python run_koopman_mujoco.py --gui --terrain rolling --payload 0.20 --wind 0.015 --wind-dir 90
 ```
 
-### 3. Steep mountain peak tracking
-```bash
+### 3. Test on steep mountain peaks
+Challenges tracking and vertical authority over rugged elevation profiles with sharp gradients:
+```cmd
 python run_koopman_mujoco.py --gui --terrain mountain
 ```
 
-### 4. Three-controller benchmark (generates `comparison.png`)
-```bash
+### 4. Run the 3-controller benchmark (generates `comparison.png`)
+Executes Cascaded PID, Linear LQR, and Koopman-MPC sequentially on identical terrain and disturbances, printing comparative $\mathrm{RMSE}$, $e_{\max}$, and $\mathrm{AGL}_{\min}$, and saving a 4-panel figure:
+```cmd
 python run_sim.py --ctrl all --gui --terrain rolling
 ```
 
-### 5. Interactive flight dashboard
-```bash
+### 5. Launch interactive flight dashboard with real-time sliders
+Opens an interactive control dashboard allowing dynamic tuning of wind vectors, payload mass, target clearance, and terrain selection with live state telemetry:
+```cmd
 python drone_sim.py --terrain rolling
 ```
 
