@@ -3,19 +3,26 @@ import os
 import sys
 import numpy as np
 
-# Load base model from v2_stable_koopman_mpc/data/koopman_model.npz
+# Load base model from data/koopman_model.npz (or v2_stable_koopman_mpc/data/koopman_model.npz)
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+v2_dir = os.path.join(base_dir, "v2_stable_koopman_mpc") if os.path.exists(os.path.join(base_dir, "v2_stable_koopman_mpc")) else base_dir
 model_path = os.path.join(base_dir, "data", "koopman_model.npz")
+if not os.path.exists(model_path):
+    model_path = os.path.join(v2_dir, "data", "koopman_model.npz")
 model_data = np.load(model_path)
 A, B = model_data["A"], model_data["B"]
 print(f"Loaded authentic Koopman model from {model_path}")
 print(f"  A shape: {A.shape}, B shape: {B.shape}")
 
 # Import base lifting function and base KoopmanMPC
-sys.path.insert(0, os.path.join(base_dir, "koopman_model"))
+for p in [os.path.join(base_dir, "koopman_model"), os.path.join(v2_dir, "koopman_model")]:
+    if os.path.exists(p) and p not in sys.path:
+        sys.path.insert(0, p)
 from build_edmd_dataset import lift as base_lift
 
-sys.path.insert(0, os.path.join(base_dir, "mpc"))
+for p in [os.path.join(base_dir, "mpc"), os.path.join(v2_dir, "mpc")]:
+    if os.path.exists(p) and p not in sys.path:
+        sys.path.insert(0, p)
 import cvxpy as cp
 from mujoco_quad_env import MujocoQuadEnv
 

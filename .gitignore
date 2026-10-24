@@ -11,3 +11,4 @@ drones-env/
 gym-pybullet-drones/
 repo_update_package/
 artifacts/
+*.zip
