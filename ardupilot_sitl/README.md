@@ -15,7 +15,6 @@ This folder contains the **ArduPilot Software-in-the-Loop (SITL) integration** f
 - [Results and validation](#results-and-validation)
 - [Troubleshooting](#troubleshooting)
 - [Safety and limitations](#safety-and-limitations)
-- [Future work](#future-work)
 - [References](#references)
 
 ## Project overview
@@ -219,15 +218,6 @@ Suggested repository layout:
 - Do not connect this experimental controller to a physical aircraft without a separate safety review, appropriate failsafes, supervised testing, and validated command limits.
 - Results depend on the learned model, simulator settings, coordinate conventions, controller configuration, and solver behaviour.
 - Keep generated logs and plots so that results can be reproduced and independently checked.
-
-## Future work
-
-- Validate baseline trajectory tracking and document quantitative metrics.
-- Add plots comparing reference and actual trajectories.
-- Evaluate robustness to payload and wind changes after baseline validation.
-- Document model training, state lifting, input scaling, and coordinate-frame conventions.
-- Compare Koopman-MPC performance with a baseline controller under identical conditions.
-
 
 ## References
 
